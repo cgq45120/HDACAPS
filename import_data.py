@@ -4,7 +4,7 @@ import numpy as np
 import math
 class import_mat_data():
     def __init__(self):
-        self.path = 'all_data_wrist/'
+        self.path = '../all_data_wrist/'
         self.length_windows = 300
         self.number_data = 195
         self.interval = 50

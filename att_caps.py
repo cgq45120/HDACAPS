@@ -35,16 +35,22 @@ class CapsLayer(object):
         input = tf.tile(input, [1, 1,self.num_outputs* self.vec_len, 1, 1])
         u_hat = tf.reduce_sum(W * input, axis=3, keepdims=True)
         u_hat = tf.reshape(u_hat, shape=[-1, input_shape[1], self.num_outputs, self.vec_len, 1])
+        u_hat_stopped = tf.stop_gradient(u_hat,name='stop_gradient')
         # u_hat = tf.matmul(W, input, transpose_a=True) # W在相乘前转置
         for r_iter in range(self.iter_routing):
             with tf.variable_scope('iter_' + str(r_iter)):
                 c_IJ = tf.nn.softmax(b_IJ, axis=2)
-                s_J = tf.multiply(c_IJ, u_hat)
-                s_J = tf.reduce_sum(s_J, axis=1, keep_dims=True)
-                v_J = self.squash(s_J)
-                v_J_tiled = tf.tile(v_J, [1, input_shape[1], 1, 1, 1])
-                u_produce_v = tf.matmul(u_hat, v_J_tiled, transpose_a=True)
-                b_IJ += tf.reduce_sum(u_produce_v, axis=0, keep_dims=True)
+                if r_iter == self.iter_routing-1:
+                    s_J = tf.multiply(c_IJ, u_hat)
+                    s_J = tf.reduce_sum(s_J, axis=1, keep_dims=True)
+                    v_J = self.squash(s_J)
+                elif r_iter <self.iter_routing-1:
+                    s_J = tf.multiply(c_IJ, u_hat_stopped)
+                    s_J = tf.reduce_sum(s_J, axis=1, keep_dims=True)
+                    v_J = self.squash(s_J)
+                    v_J_tiled = tf.tile(v_J, [1, input_shape[1], 1, 1, 1])
+                    u_produce_v = tf.matmul(u_hat_stopped, v_J_tiled, transpose_a=True)
+                    b_IJ += tf.reduce_sum(u_produce_v, axis=0, keep_dims=True)
         return(v_J)
 
     def squash(self,vector):

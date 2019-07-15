@@ -9,6 +9,7 @@ from tqdm import tqdm
 def weight_variable(shape):#权重正态分布初始化
     initial=tf.truncated_normal(shape,stddev=0.1)
     return tf.Variable(initial)
+    
 # tf.truncated_normal(shape, mean, stddev) :shape表示生成张量的维度，mean是均值，stddev是标准差。
 def bias_variable(shape):#偏置量初始化
     initial=tf.constant(0.0,shape=shape)#value=0.1,shape是生成的维度

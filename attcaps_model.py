@@ -42,16 +42,22 @@ class CapsLayer(object):
         input = tf.tile(input, [1, 1,self.num_outputs* self.vec_len, 1, 1])
         u_hat = tf.reduce_sum(W * input, axis=3, keepdims=True)
         u_hat = tf.reshape(u_hat, shape=[-1, input_shape[1], self.num_outputs, self.vec_len, 1])
+        u_hat_stopped = tf.stop_gradient(u_hat,name='stop_gradient')
         # u_hat = tf.matmul(W, input, transpose_a=True) # W在相乘前转置
         for r_iter in range(self.iter_routing):
             with tf.variable_scope('iter_' + str(r_iter)):
                 c_IJ = tf.nn.softmax(b_IJ, axis=2)
-                s_J = tf.multiply(c_IJ, u_hat)
-                s_J = tf.reduce_sum(s_J, axis=1, keep_dims=True)
-                v_J = self.squash(s_J)
-                v_J_tiled = tf.tile(v_J, [1, input_shape[1], 1, 1, 1])
-                u_produce_v = tf.matmul(u_hat, v_J_tiled, transpose_a=True)
-                b_IJ += tf.reduce_sum(u_produce_v, axis=0, keep_dims=True)
+                if r_iter == self.iter_routing-1:
+                    s_J = tf.multiply(c_IJ, u_hat)
+                    s_J = tf.reduce_sum(s_J, axis=1, keep_dims=True)
+                    v_J = self.squash(s_J)
+                elif r_iter <self.iter_routing-1:
+                    s_J = tf.multiply(c_IJ, u_hat_stopped)
+                    s_J = tf.reduce_sum(s_J, axis=1, keep_dims=True)
+                    v_J = self.squash(s_J)
+                    v_J_tiled = tf.tile(v_J, [1, input_shape[1], 1, 1, 1])
+                    u_produce_v = tf.matmul(u_hat_stopped, v_J_tiled, transpose_a=True)
+                    b_IJ += tf.reduce_sum(u_produce_v, axis=0, keep_dims=True)
         return(v_J)
 
     def squash(self,vector):
@@ -91,8 +97,9 @@ class Capsnet():
         self.m_minus = m_minus
         self.epsilon = epsilon
         self.global_step = tf.Variable(0, name='global_step', trainable = False)
-        self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step,1000,0.97,staircase=True),1e-5)
+        # self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step,1000,0.97,staircase=True),1e-5)
         self.iter_routing = iter_routing
+        self.max_gradient_norm = 10
         self.num_outputs_layer_conv2d1 = 64
         self.num_outputs_layer_conv2d2 = 128
         self.num_outputs_layer_conv2d3 = 256
@@ -124,28 +131,28 @@ class Capsnet():
             self.v_length = tf.sqrt(tf.reduce_sum(tf.square(self.caps2), axis=2, keep_dims=True) + self.epsilon)
         
         # loss function1
-        label_onehot_out = tf.reshape(label_onehot,(-1,num_classes))
-        output_logit = tf.reshape(self.v_length,(-1,num_classes))
-        self.total_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = output_logit, labels = label_onehot_out))
-        params = tf.trainable_variables()  # return variables which needed train
-        gradients = tf.gradients(self.total_loss, params)
-        clipped_gradients, norm = tf.clip_by_global_norm(gradients, self.max_gradient_norm)  # prevent gradient boom
-        self.train_op = tf.train.AdamOptimizer(self.learning_rate).apply_gradients(zip(clipped_gradients, params), global_step = self.global_step) 
+        # label_onehot_out = tf.reshape(label_onehot,(-1,num_classes))
+        # output_logit = tf.reshape(self.v_length,(-1,num_classes))
+        # self.total_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = output_logit, labels = label_onehot_out))
+        # params = tf.trainable_variables()  # return variables which needed train
+        # gradients = tf.gradients(self.total_loss, params)
+        # clipped_gradients, norm = tf.clip_by_global_norm(gradients, self.max_gradient_norm)  # prevent gradient boom
+        # self.train_op = tf.train.AdamOptimizer(self.learning_rate).apply_gradients(zip(clipped_gradients, params), global_step = self.global_step) 
 
         # loss function2
-        # max_l = tf.square(tf.maximum(0., self.m_plus - self.v_length))
-        # max_r = tf.square(tf.maximum(0., self.v_length - self.m_minus))
-        # max_l_out = tf.reshape(max_l, shape=(-1,self.num_outputs_decode))
-        # max_r_out = tf.reshape(max_r, shape=(-1,self.num_outputs_decode))
-        # label_onehot_out = tf.squeeze(label_onehot,axis=2)
-        # L_c = label_onehot_out * max_l_out + self.lambda_val * (1 - label_onehot_out) * max_r_out
-        # self.margin_loss = tf.reduce_mean(tf.reduce_sum(L_c, axis=1))
+        max_l = tf.square(tf.maximum(0., self.m_plus - self.v_length))
+        max_r = tf.square(tf.maximum(0., self.v_length - self.m_minus))
+        max_l_out = tf.reshape(max_l, shape=(-1,self.num_outputs_decode))
+        max_r_out = tf.reshape(max_r, shape=(-1,self.num_outputs_decode))
+        label_onehot_out = tf.squeeze(label_onehot,axis=2)
+        L_c = label_onehot_out * max_l_out + self.lambda_val * (1 - label_onehot_out) * max_r_out
+        self.margin_loss = tf.reduce_mean(tf.reduce_sum(L_c, axis=1))
         # self.weight_err = tf.sqrt(tf.reduce_sum(tf.square(spatialAtt.attention))) # L2正则项
         # self.total_loss = self.margin_loss + (5e-10)*self.weight_err
-        # self.total_loss = self.margin_loss
+        self.total_loss = self.margin_loss
 
         # Adam optimization
-        # self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.total_loss, global_step = self.global_step)
+        self.train_op = tf.train.AdamOptimizer().minimize(self.total_loss, global_step = self.global_step)
 
 
 class run_main():
@@ -156,10 +163,10 @@ class run_main():
         self.testData = self.two_dimension_graph(testData)
         self.image_size = 225
         self.num_classes = 5
-        self.batch_size = 32
+        self.batch_size = 4
         self.lambda_val = 0.5
-        self.m_plus = 0.8
-        self.m_minus = 0.2
+        self.m_plus = 0.9
+        self.m_minus = 0.1
         self.epsilon = 1e-9
         self.iter_routing = 3
         self.num_outputs_decode = 5
@@ -195,11 +202,12 @@ class run_main():
                 (minibatch_X, minibatch_Y) = minibatch
                 minibatch_X = minibatch_X.reshape((-1,self.image_size,self.image_size,1))
                 minibatch_Y = minibatch_Y.reshape((-1,1))
-                output_feed = [self.capsnet_model.train_op, self.capsnet_model.total_loss]
-                _, loss = self.sess.run(output_feed, feed_dict={self.capsnet_model.image: minibatch_X, self.capsnet_model.label: minibatch_Y})
+                output_feed = [self.capsnet_model.train_op, self.capsnet_model.total_loss,self.capsnet_model.v_length]
+                _, loss ,v_length= self.sess.run(output_feed, feed_dict={self.capsnet_model.image: minibatch_X, self.capsnet_model.label: minibatch_Y})
                 epoch_cost = epoch_cost + loss / num_minibatches
             if step % 1 == 0 or step == iteration-1:
-                print('step {}: loss = {:3.10f}'.format(step,loss))
+                print('step {}: loss = {:3.10f}'.format(step,epoch_cost))
+                print(v_length.reshape((-1,5)))
         self.save()
 
     def predict(self):
@@ -254,5 +262,5 @@ class run_main():
 
 if __name__ == "__main__":
     ram_better = run_main()
-    ram_better.train(20) 
+    ram_better.train(10) 
     ram_better.predict()
