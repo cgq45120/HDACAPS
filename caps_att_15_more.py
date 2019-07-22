@@ -9,20 +9,21 @@ import math
 # %config InlineBackend.figure_format = 'svg' #高画质图
 
 class CapsLayer(object):
-    def __init__(self, epsilon,iter_routing,num_outputs, vec_len, with_routing=True, layer_type='FC'):
+    def __init__(self,batch_size, epsilon,iter_routing,num_outputs, vec_len, with_routing=True, layer_type='FC'):
         self.epsilon = epsilon
         self.iter_routing = iter_routing
         self.num_outputs = num_outputs
         self.vec_len = vec_len
         self.with_routing = with_routing
         self.layer_type = layer_type
+        self.batch_size = batch_size
 
     def __call__(self, input, kernel_size=None, stride=None):
         if self.layer_type == 'CONV':
             self.kernel_size = kernel_size
             self.stride = stride
             if not self.with_routing:
-                capsules = tf.contrib.layers.conv2d(input, self.num_outputs * self.vec_len,self.kernel_size, self.stride, padding="VALID")
+                capsules = tf.contrib.layers.conv2d(input, self.num_outputs * self.vec_len,self.kernel_size, self.stride, padding="VALID",activation_fn=tf.nn.relu)
                 capsules = tf.reshape(capsules, (-1, capsules.shape[1].value*capsules.shape[2].value*self.num_outputs, self.vec_len, 1))
                 capsules = self.squash(capsules)
                 return (capsules)
@@ -30,7 +31,7 @@ class CapsLayer(object):
             if self.with_routing:
                 self.input = tf.reshape(input, shape=(-1, input.shape[1].value, 1, input.shape[-2].value, 1))
                 with tf.variable_scope('routing'):
-                    b_IJ = tf.constant(np.zeros([1, input.shape[1].value, self.num_outputs, 1, 1], dtype=np.float32))
+                    b_IJ = tf.constant(np.zeros([self.batch_size, input.shape[1].value, self.num_outputs, 1, 1], dtype=np.float32))
                     capsules = self.routing(self.input, b_IJ)
                     capsules = tf.squeeze(capsules, axis=1)
             return(capsules)
@@ -57,7 +58,7 @@ class CapsLayer(object):
                     v_J = self.squash(s_J)
                     v_J_tiled = tf.tile(v_J, [1, input_shape[1], 1, 1, 1])
                     u_produce_v = tf.matmul(u_hat_stopped, v_J_tiled, transpose_a=True)
-                    b_IJ += tf.reduce_sum(u_produce_v, axis=0, keep_dims=True)
+                    b_IJ += u_produce_v
         return(v_J)
 
     def squash(self,vector):
@@ -69,15 +70,15 @@ class CapsLayer(object):
 class spatial_attention():
     def __init__(self,input_shape):
         self.w_tanh = self.weight_variable((1,input_shape[1].value,input_shape[2].value,input_shape[3].value))
-        self.w_sigmoid = self.weight_variable((1,1,1,input_shape[3].value))
-        # self.b_tanh = self.bias_variable((1,input_shape[1].value,input_shape[2].value,input_shape[3].value))
         self.b_tanh = self.bias_variable((1,input_shape[1].value,input_shape[2].value,1))
-        self.b_sigmoid = self.bias_variable([1])
+
         
     def __call__(self,input):
-        fc_first = tf.nn.tanh(tf.multiply(input,self.w_tanh) + self.b_tanh) 
-        fc_second = tf.reduce_sum(tf.multiply(fc_first,self.w_sigmoid),axis=3,keep_dims=True) + self.b_sigmoid
-        self.attention = tf.nn.sigmoid(fc_second)
+        fc_first = tf.nn.tanh(tf.reduce_sum(tf.multiply(input,self.w_tanh),axis=3,keep_dims=True) + self.b_tanh)
+        spatial_attention_max = tf.nn.max_pool(fc_first, ksize=[1,2,2,1], strides=[1,1,1,1], padding='SAME')
+        spatial_attention_mean = tf.nn.avg_pool(fc_first, ksize=[1,2,2,1], strides=[1,1,1,1], padding='SAME')
+        spatial_attention_concat = tf.concat([spatial_attention_max,spatial_attention_mean],axis=3)
+        self.attention= tf.contrib.layers.conv2d(spatial_attention_concat, num_outputs = 1,kernel_size = 5, stride = 1,padding='SAME',activation_fn=tf.nn.sigmoid)
         output = tf.multiply(input,self.attention)
         return output
 
@@ -90,56 +91,40 @@ class spatial_attention():
         return tf.Variable(initial)
 
 class Capsnet():
-    def __init__(self,image_size,num_classes,lambda_val,m_plus,m_minus,epsilon,iter_routing,num_outputs_decode,num_dims_decode,learning_rate):
+    def __init__(self,image_size,channal,num_classes,lambda_val,m_plus,m_minus,epsilon,iter_routing,num_outputs_decode,num_dims_decode,batch_size):
         self.image_size = image_size
         self.lambda_val = lambda_val
         self.m_plus = m_plus
         self.m_minus = m_minus
         self.epsilon = epsilon
         self.global_step = tf.Variable(0, name='global_step', trainable = False)
-        # self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step,1000,0.97,staircase=True),1e-5)
         self.iter_routing = iter_routing
+        self.batch_size = batch_size
         self.max_gradient_norm = 10
-        self.num_outputs_layer_conv2d1 = 64
-        self.num_outputs_layer_conv2d2 = 128
-        self.num_outputs_layer_conv2d3 = 256
+        self.num_outputs_layer_conv2d1 = 128
         self.num_outputs_layer_PrimaryCaps = 32
         self.num_dims_layer_PrimaryCaps = 8
         self.num_outputs_decode = num_outputs_decode
         self.num_dims_decode = num_dims_decode
-        self.image = tf.placeholder(tf.float32,[None,image_size,image_size,1])
-        self.label = tf.placeholder(tf.int64,[None,1])
+        self.image = tf.placeholder(tf.float32,[self.batch_size,image_size,image_size,channal])
+        self.label = tf.placeholder(tf.int64,[self.batch_size,1])
         label_onehot = tf.one_hot(self.label,depth=num_classes,axis=1,dtype = tf.float32)
-        # transform to 
         with tf.variable_scope('Conv1_layer'):
-            conv1 = tf.contrib.layers.conv2d(self.image, num_outputs = self.num_outputs_layer_conv2d1,kernel_size = 13, stride = 2,padding='VALID')
-        with tf.variable_scope('Conv2_layer'):
-            conv2 = tf.contrib.layers.conv2d(conv1, num_outputs = self.num_outputs_layer_conv2d2,kernel_size = 11, stride = 2,padding='VALID')
-        with tf.variable_scope('Conv3_layer'):
-            conv3 = tf.contrib.layers.conv2d(conv2, num_outputs = self.num_outputs_layer_conv2d3,kernel_size = 11, stride = 2,padding='VALID')
-        attention_shape = conv3.get_shape()
+            conv1 = tf.contrib.layers.conv2d(self.image, num_outputs = self.num_outputs_layer_conv2d1,kernel_size = 5, stride = 1,padding='VALID')
+        attention_shape = conv1.get_shape()
         with tf.variable_scope('soft_attention'):
             spatialAtt = spatial_attention(attention_shape)
-            attention1 = spatialAtt(conv3)
+            attention1 = spatialAtt(conv1)
         with tf.variable_scope('PrimaryCaps_layer'):
-            primaryCaps = CapsLayer(self.epsilon,self.iter_routing,num_outputs=self.num_outputs_layer_PrimaryCaps, vec_len=self.num_dims_layer_PrimaryCaps, with_routing=False, layer_type='CONV')
-            caps1 = primaryCaps(attention1, kernel_size=9, stride=2)
+            primaryCaps = CapsLayer(self.batch_size,self.epsilon,self.iter_routing,num_outputs=self.num_outputs_layer_PrimaryCaps, vec_len=self.num_dims_layer_PrimaryCaps, with_routing=False, layer_type='CONV')
+            caps1 = primaryCaps(attention1, kernel_size=5, stride=1)
         with tf.variable_scope('DigitCaps_layer'):
-            digitCaps = CapsLayer(self.epsilon,self.iter_routing, num_outputs = self.num_outputs_decode, vec_len=self.num_dims_decode, with_routing=True, layer_type='FC')
+            digitCaps = CapsLayer(self.batch_size,self.epsilon,self.iter_routing, num_outputs = self.num_outputs_decode, vec_len=self.num_dims_decode, with_routing=True, layer_type='FC')
             self.caps2 = digitCaps(caps1)
         with tf.variable_scope('Masking'):
             self.v_length = tf.sqrt(tf.reduce_sum(tf.square(self.caps2), axis=2, keep_dims=True) + self.epsilon)
         
-        # loss function1
-        # label_onehot_out = tf.reshape(label_onehot,(-1,num_classes))
-        # output_logit = tf.reshape(self.v_length,(-1,num_classes))
-        # self.total_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = output_logit, labels = label_onehot_out))
-        # params = tf.trainable_variables()  # return variables which needed train
-        # gradients = tf.gradients(self.total_loss, params)
-        # clipped_gradients, norm = tf.clip_by_global_norm(gradients, self.max_gradient_norm)  # prevent gradient boom
-        # self.train_op = tf.train.AdamOptimizer(self.learning_rate).apply_gradients(zip(clipped_gradients, params), global_step = self.global_step) 
-
-        # loss function2
+        #loss function
         max_l = tf.square(tf.maximum(0., self.m_plus - self.v_length))
         max_r = tf.square(tf.maximum(0., self.v_length - self.m_minus))
         max_l_out = tf.reshape(max_l, shape=(-1,self.num_outputs_decode))
@@ -147,23 +132,19 @@ class Capsnet():
         label_onehot_out = tf.squeeze(label_onehot,axis=2)
         L_c = label_onehot_out * max_l_out + self.lambda_val * (1 - label_onehot_out) * max_r_out
         self.margin_loss = tf.reduce_mean(tf.reduce_sum(L_c, axis=1))
-        # self.weight_err = tf.sqrt(tf.reduce_sum(tf.square(spatialAtt.attention))) # L2正则项
-        # self.total_loss = self.margin_loss + (5e-10)*self.weight_err
         self.total_loss = self.margin_loss
 
         # Adam optimization
         self.train_op = tf.train.AdamOptimizer().minimize(self.total_loss, global_step = self.global_step)
 
-
 class run_main():
     def __init__(self):
         sign_handle = import_data.dealsign()
         trainData,self.trainFlag,testData,self.testFlag = sign_handle.readFile()
-        self.trainData = self.two_dimension_graph(trainData)
-        self.testData = self.two_dimension_graph(testData)
-        self.image_size = 225
+        self.image_size = 15
+        self.channal = 16
         self.num_classes = 5
-        self.batch_size = 4
+        self.batch_size = 16
         self.lambda_val = 0.5
         self.m_plus = 0.9
         self.m_minus = 0.1
@@ -171,62 +152,83 @@ class run_main():
         self.iter_routing = 3
         self.num_outputs_decode = 5
         self.num_dims_decode = 16
-        self.learning_rate = 1e-3
-        self.capsnet_model = Capsnet(self.image_size,self.num_classes,self.lambda_val,self.m_plus,self.m_minus,self.epsilon,self.iter_routing,self.num_outputs_decode,self.num_dims_decode,self.learning_rate)
+        self.trainData = self.two_dimension_graph(trainData)
+        self.testData = self.two_dimension_graph(testData)
+        self.capsnet_model = Capsnet(self.image_size,self.channal,self.num_classes,self.lambda_val,self.m_plus,self.m_minus,self.epsilon,self.iter_routing,self.num_outputs_decode,self.num_dims_decode,self.batch_size)
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=False))
         self.sess.run(tf.global_variables_initializer())
     
     def two_dimension_graph(self,feature):
-        one_feature = np.ones((feature.shape[0],1))
-        feature = np.hstack((feature,one_feature))
-        feature_graph = []
+        feature = feature.reshape((-1,self.image_size-1,self.channal))
+        feature = feature.transpose(0,2,1)
+        feature_graph = np.zeros((feature.shape[0],self.image_size,self.image_size,self.channal))
         for i in range(feature.shape[0]):
-            single_use = feature[i].reshape(-1,len(feature[i]))
-            # single_graph = self.sigmoid(0.5*np.sqrt(single_use.T*single_use))
-            single_graph = np.sqrt(single_use.T*single_use)
-            # single_graph = single_use.T*single_use
-            single_graph = single_graph.reshape(-1,single_graph.shape[0]*single_graph.shape[1])
-            feature_graph.append(single_graph)
-        feature_graph = np.squeeze(np.array(feature_graph))
+            for j in range(feature.shape[1]):
+                single_use = np.hstack((feature[i,j,:],1)).reshape(-1,self.image_size)
+                # single_graph = 0.5*np.sqrt(single_use.T*single_use)
+                single_graph = self.sigmoid(0.5*np.sqrt(single_use.T*single_use))
+                feature_graph[i,:,:,j] = single_graph
+        feature_graph = feature_graph.reshape((feature.shape[0],-1))
         return feature_graph
+
+    def sigmoid(self,single_feature):
+        output_s = 1/(1+np.exp(-single_feature))
+        return output_s
 
     def train(self,iteration):
         seed = 3
         m = self.trainData.shape[0]
+        i = 0
+        num_minibatches = int(m / self.batch_size)
+        self.record_epoch_loss = np.zeros(iteration)
+        self.record_loss = np.zeros(num_minibatches*iteration)
         for step in tqdm(range(iteration), total=iteration, ncols=70, leave=False, unit='b'):
             epoch_cost = 0
             seed += 1
-            num_minibatches = int(m / self.batch_size)
             minibatches = self.random_mini_batches(self.batch_size,seed)
+            j = 0
             for minibatch in minibatches:
                 (minibatch_X, minibatch_Y) = minibatch
-                minibatch_X = minibatch_X.reshape((-1,self.image_size,self.image_size,1))
+                minibatch_X = minibatch_X.reshape((-1,self.image_size,self.image_size,self.channal))
                 minibatch_Y = minibatch_Y.reshape((-1,1))
-                output_feed = [self.capsnet_model.train_op, self.capsnet_model.total_loss,self.capsnet_model.v_length]
-                _, loss ,v_length= self.sess.run(output_feed, feed_dict={self.capsnet_model.image: minibatch_X, self.capsnet_model.label: minibatch_Y})
+                output_feed = [self.capsnet_model.train_op, self.capsnet_model.total_loss]
+                _, loss = self.sess.run(output_feed, feed_dict={self.capsnet_model.image: minibatch_X, self.capsnet_model.label: minibatch_Y})
                 epoch_cost = epoch_cost + loss / num_minibatches
+                self.record_loss[i*num_minibatches+j] = loss
+                j = j + 1
             if step % 1 == 0 or step == iteration-1:
-                print('step {}: loss = {:3.10f}'.format(step,epoch_cost))
-                print(v_length.reshape((-1,5)))
+                print('step {}:loss = {:3.10f}'.format(step,epoch_cost))
+            self.record_epoch_loss[i] = epoch_cost
+            i = i + 1
         self.save()
+
+    def save_epoch_loss(self,accuracy):
+        m = self.record_epoch_loss.shape[0]
+        with open('saver_caps_best/saver_caps_'+str(accuracy)+'/epoch_loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_epoch_loss[i]))
+                f.write('\n')
+
+    def save_loss(self,accuracy):
+        m = self.record_loss.shape[0]
+        with open('saver_caps_best/saver_caps_'+str(accuracy)+'/loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_loss[i]))
+                f.write('\n')
 
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
         correct = 0
         for i in range(num):
-            datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,1))
+            datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
             answer = self.sess.run(self.capsnet_model.v_length,feed_dict={self.capsnet_model.image: datafortest})
             prediction = np.argmax(np.squeeze(answer),axis=1)
             correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
-            print(correct)
-        datafortest = self.testData[num*self.batch_size:,:].reshape((-1,self.image_size,self.image_size,1))
-        answer = self.sess.run(self.capsnet_model.v_length,feed_dict={self.capsnet_model.image: datafortest})
-        prediction = np.argmax(np.squeeze(answer),axis=1)
-        correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[num*self.batch_size:,:])+0)
         print(correct)
-        accuracy = correct/m
+        accuracy = correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
+        return accuracy
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData
@@ -245,11 +247,6 @@ class run_main():
             mini_batch_Y = shuffled_Y[k * mini_batch_size: k *mini_batch_size + mini_batch_size,:]
             mini_batch = (mini_batch_X, mini_batch_Y)
             mini_batches.append(mini_batch)
-        if m % mini_batch_size != 0:
-            mini_batch_X = shuffled_X[num_complete_minibatches * mini_batch_size: m,:]
-            mini_batch_Y = shuffled_Y[num_complete_minibatches * mini_batch_size: m,:]
-            mini_batch = (mini_batch_X, mini_batch_Y)
-            mini_batches.append(mini_batch)
         return mini_batches
 
     def save(self):
@@ -259,8 +256,19 @@ class run_main():
     def load(self):
         saver = tf.train.Saver()
         saver.restore(self.sess,'saver_caps/muscle.ckpt')
-
+        
+    def save_best(self,accuracy):
+        saver = tf.train.Saver(max_to_keep = 5)
+        saver.save(self.sess,'saver_caps_best/saver_caps_'+str(accuracy)+'/muscle.ckpt')
+        
 if __name__ == "__main__":
-    ram_better = run_main()
-    ram_better.train(10) 
-    ram_better.predict()
+    for i in range(15):
+        print('the time:'+str(i+1))
+        ram_better = run_main()
+        ram_better.train(40) 
+        accuracy = ram_better.predict()
+        if accuracy >0.75:
+            ram_better.save_best(accuracy)
+            ram_better.save_loss(accuracy)
+            ram_better.save_epoch_loss(accuracy)
+        tf.reset_default_graph()

@@ -23,7 +23,7 @@ class CapsLayer(object):
             self.kernel_size = kernel_size
             self.stride = stride
             if not self.with_routing:
-                capsules = tf.contrib.layers.conv2d(input, self.num_outputs * self.vec_len,self.kernel_size, self.stride, padding="VALID")
+                capsules = tf.contrib.layers.conv2d(input, self.num_outputs * self.vec_len,self.kernel_size, self.stride, padding="VALID",activation_fn=tf.nn.relu)
                 capsules = tf.reshape(capsules, (-1, capsules.shape[1].value*capsules.shape[2].value*self.num_outputs, self.vec_len, 1))
                 capsules = self.squash(capsules)
                 return (capsules)
@@ -70,15 +70,15 @@ class CapsLayer(object):
 class spatial_attention():
     def __init__(self,input_shape):
         self.w_tanh = self.weight_variable((1,input_shape[1].value,input_shape[2].value,input_shape[3].value))
-        self.w_sigmoid = self.weight_variable((1,1,1,input_shape[3].value))
-        # self.b_tanh = self.bias_variable((1,input_shape[1].value,input_shape[2].value,input_shape[3].value))
         self.b_tanh = self.bias_variable((1,input_shape[1].value,input_shape[2].value,1))
-        self.b_sigmoid = self.bias_variable([1])
+        self.input_shape = input_shape
         
     def __call__(self,input):
-        fc_first = tf.nn.tanh(tf.multiply(input,self.w_tanh) + self.b_tanh) 
-        fc_second = tf.reduce_sum(tf.multiply(fc_first,self.w_sigmoid),axis=3,keep_dims=True) + self.b_sigmoid
-        self.attention = tf.nn.sigmoid(fc_second)
+        fc_first = tf.nn.tanh(tf.reduce_sum(tf.multiply(input,self.w_tanh),axis=3,keep_dims=True) + self.b_tanh)
+        spatial_attention_max = tf.nn.max_pool(fc_first, ksize=[1,2,2,1], strides=[1,1,1,1], padding='SAME')
+        spatial_attention_mean = tf.nn.avg_pool(fc_first, ksize=[1,2,2,1], strides=[1,1,1,1], padding='SAME')
+        spatial_attention_concat = tf.concat([spatial_attention_max,spatial_attention_mean],axis=3)
+        self.attention= tf.contrib.layers.conv2d(spatial_attention_concat, num_outputs = 1,kernel_size = 5, stride = 1,padding='SAME',activation_fn=tf.nn.sigmoid)
         output = tf.multiply(input,self.attention)
         return output
 
@@ -100,24 +100,19 @@ class Capsnet():
         self.global_step = tf.Variable(0, name='global_step', trainable = False)
         self.iter_routing = iter_routing
         self.batch_size = batch_size
-        self.max_gradient_norm = 10
-        self.num_outputs_layer_conv2d1 = 128
-        self.num_outputs_layer_conv2d2 = 256
-#         self.num_outputs_layer_conv2d3 = 256
-        self.num_outputs_layer_PrimaryCaps = 32
+        self.num_outputs_layer_conv2d1 = 64
+        self.num_outputs_layer_conv2d2 = 128
+        self.num_outputs_layer_PrimaryCaps = 16
         self.num_dims_layer_PrimaryCaps = 8
         self.num_outputs_decode = num_outputs_decode
         self.num_dims_decode = num_dims_decode
         self.image = tf.placeholder(tf.float32,[self.batch_size,image_size,image_size,1])
         self.label = tf.placeholder(tf.int64,[self.batch_size,1])
         label_onehot = tf.one_hot(self.label,depth=num_classes,axis=1,dtype = tf.float32)
-
         with tf.variable_scope('Conv1_layer'):
-            conv1 = tf.contrib.layers.conv2d(self.image, num_outputs = self.num_outputs_layer_conv2d1,kernel_size = 15, stride = 3,padding='VALID')
+            conv1 = tf.contrib.layers.conv2d(self.image, num_outputs = self.num_outputs_layer_conv2d1,kernel_size = 15, stride = 3,padding='VALID',activation_fn=tf.nn.relu)
         with tf.variable_scope('Conv2_layer'):
-            conv2 = tf.contrib.layers.conv2d(conv1, num_outputs = self.num_outputs_layer_conv2d2,kernel_size = 14, stride = 3,padding='VALID')
-#         with tf.variable_scope('Conv3_layer'):
-#             conv3 = tf.contrib.layers.conv2d(conv2, num_outputs = self.num_outputs_layer_conv2d3,kernel_size = 11, stride = 2,padding='VALID')
+            conv2 = tf.contrib.layers.conv2d(conv1, num_outputs = self.num_outputs_layer_conv2d2,kernel_size = 14, stride = 3,padding='VALID',activation_fn=tf.nn.relu)
         attention_shape = conv2.get_shape()
         with tf.variable_scope('soft_attention'):
             spatialAtt = spatial_attention(attention_shape)
@@ -130,7 +125,6 @@ class Capsnet():
             self.caps2 = digitCaps(caps1)
         with tf.variable_scope('Masking'):
             self.v_length = tf.sqrt(tf.reduce_sum(tf.square(self.caps2), axis=2, keep_dims=True) + self.epsilon)
-       
 #         loss function
         max_l = tf.square(tf.maximum(0., self.m_plus - self.v_length))
         max_r = tf.square(tf.maximum(0., self.v_length - self.m_minus))
@@ -142,6 +136,7 @@ class Capsnet():
         self.total_loss = self.margin_loss
 #         Adam optimization
         self.train_op = tf.train.AdamOptimizer().minimize(self.total_loss, global_step = self.global_step)
+        # self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.total_loss, global_step = self.global_step)
 
 
 class run_main():
@@ -152,10 +147,10 @@ class run_main():
         self.testData = self.two_dimension_graph(testData)
         self.image_size = 225
         self.num_classes = 5
-        self.batch_size = 32
+        self.batch_size = 16
         self.lambda_val = 0.5
-        self.m_plus = 0.8
-        self.m_minus = 0.2
+        self.m_plus = 0.9
+        self.m_minus = 0.1
         self.epsilon = 1e-9
         self.iter_routing = 3
         self.num_outputs_decode = 5
@@ -170,9 +165,7 @@ class run_main():
         feature_graph = []
         for i in range(feature.shape[0]):
             single_use = feature[i].reshape(-1,len(feature[i]))
-            # single_graph = self.sigmoid(0.5*np.sqrt(single_use.T*single_use))
-            single_graph = np.sqrt(single_use.T*single_use)
-            # single_graph = single_use.T*single_use
+            single_graph = 0.5*np.sqrt(single_use.T*single_use)
             single_graph = single_graph.reshape(-1,single_graph.shape[0]*single_graph.shape[1])
             feature_graph.append(single_graph)
         feature_graph = np.squeeze(np.array(feature_graph))
@@ -204,10 +197,9 @@ class run_main():
         for i in range(num):
             datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,1))
             answer = self.sess.run(self.capsnet_model.v_length,feed_dict={self.capsnet_model.image: datafortest})
-#             prediction = np.argmax(np.squeeze(answer))
             prediction = np.argmax(np.squeeze(answer),axis=1)
             correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
-            print(correct)
+        print(correct)
         accuracy = correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
 
@@ -240,5 +232,5 @@ class run_main():
 
 if __name__ == "__main__":
     ram_better = run_main()
-    ram_better.train(30) 
+    ram_better.train(50) 
     ram_better.predict()
