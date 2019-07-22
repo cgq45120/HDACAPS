@@ -22,7 +22,7 @@ class model_cnn(object):
         self.keep_prob = tf.placeholder(tf.float32)
         self.learning_rate = learning_rate
         self.global_step = tf.Variable(0, trainable=False)
-        self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step,200,0.97,staircase=True),1e-7)
+        self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step,100,0.97,staircase=True),1e-7)
         self.m_plus = 0.9
         self.m_minus = 0.1
         self.lambda_val = 0.5
@@ -53,8 +53,6 @@ class model_cnn(object):
         self.W_fc2 = weight_variable([512, num_classes])
         self.b_fc2 = bias_variable([num_classes])
         self.output_logit = tf.add(tf.matmul(h_fc1_drop, self.W_fc2) ,self.b_fc2)
-
-
 
         #loss 1
         # self.out_predict = tf.nn.softmax(output_logit)
@@ -109,10 +107,14 @@ class run_main():
     def train(self,iteration):
         seed = 3
         m = self.trainData.shape[0]
+        i = 0
         num_minibatches = int(m / self.batch_size)
+        self.record_epoch_loss = np.zeros(iteration)
+        self.record_loss = np.zeros(num_minibatches*iteration)
         for step in tqdm(range(iteration), total=iteration, ncols=70, leave=False, unit='b'):
             epoch_cost = 0
             seed += 1
+            j = 0
             minibatches = self.random_mini_batches(self.batch_size,seed)
             for minibatch in minibatches:
                 (minibatch_X, minibatch_Y) = minibatch
@@ -120,10 +122,32 @@ class run_main():
                 output_feed = [self.cnn.train_op,self.cnn.cross_entropy,self.cnn.learning_rate]
                 _, loss ,learning_rate_now = self.sess.run(output_feed, feed_dict={self.cnn.image_input:minibatch_X,self.cnn.label_input:minibatch_Y,self.cnn.keep_prob:0.8})
                 epoch_cost = epoch_cost + loss / num_minibatches
+                self.record_loss[i*num_minibatches+j] = loss
+                j = j + 1
             if step % 1 == 0 or step == (iteration-1):
                 print('step {}: learing_rate={:3.10f}\t loss = {:3.10f}\t '.format(step, learning_rate_now,epoch_cost))
+            self.record_epoch_loss[i] = epoch_cost
+            i = i + 1
         self.save()
 
+    def save_epoch_loss(self,accuracy):
+        m = self.record_epoch_loss.shape[0]
+        with open('saver_cnn_best/saver_cnn_'+str(accuracy)+'/epoch_loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_epoch_loss[i]))
+                f.write('\n')
+
+    def save_loss(self,accuracy):
+        m = self.record_loss.shape[0]
+        with open('saver_cnn_best/saver_cnn_'+str(accuracy)+'/loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_loss[i]))
+                f.write('\n')
+    
+    def save_best(self,accuracy):
+        saver = tf.train.Saver(max_to_keep = 5)
+        saver.save(self.sess,'saver_cnn_best/saver_cnn_'+str(accuracy)+'/muscle.ckpt')
+        
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
@@ -136,6 +160,7 @@ class run_main():
         print(correct)
         accuracy = correct/(self.batch_size*num)
         print(accuracy)
+        return accuracy
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData
@@ -165,6 +190,13 @@ class run_main():
         saver.restore(self.sess,'saver_cnn/muscle.ckpt')
 
 if __name__ == "__main__":
-    ram_better = run_main()
-    ram_better.train(1000)
-    ram_better.predict()
+    for i in range(5):
+        print('the time:'+str(i+1))
+        ram_better = run_main()
+        ram_better.train(40) 
+        accuracy = ram_better.predict()
+        if accuracy >0.7:
+            ram_better.save_best(accuracy)
+            ram_better.save_loss(accuracy)
+            ram_better.save_epoch_loss(accuracy)
+        tf.reset_default_graph()

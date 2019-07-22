@@ -62,18 +62,45 @@ class run_main():
     def train(self,iteration):
         seed = 3
         m = self.trainData.shape[0]
+        i = 0
+        num_minibatches = int(m / self.batch_size)
+        self.record_epoch_loss = np.zeros(iteration)
+        self.record_loss = np.zeros(num_minibatches*iteration)
         for step in tqdm(range(iteration), total=iteration, ncols=70, leave=False, unit='b'):
             epoch_cost = 0
             seed += 1
-            num_minibatches = int(m / self.batch_size)
+            j = 0
             minibatches = self.random_mini_batches(self.batch_size,seed)
             for minibatch in minibatches:
                 (minibatch_X, minibatch_Y) = minibatch
                 output_feed = [self.Ann_model.train_op,self.Ann_model.cross_entropy,self.Ann_model.learning_rate]
                 _, loss ,learning_rate_now = self.sess.run(output_feed, feed_dict={self.Ann_model.input:minibatch_X,self.Ann_model.label:minibatch_Y})
                 epoch_cost = epoch_cost + loss / num_minibatches
+                self.record_loss[i*num_minibatches+j] = loss
+                j = j + 1
             if step % 1 == 0 or step == (iteration-1):
                 print('step {}: learing_rate={:3.10f}\t loss = {:3.6f}\t '.format(step, learning_rate_now,epoch_cost))
+            self.record_epoch_loss[i] = epoch_cost
+            i = i + 1
+        self.save()
+
+    def save_epoch_loss(self,accuracy):
+        m = self.record_epoch_loss.shape[0]
+        with open('saver_bp_best/saver_bp_'+str(accuracy)+'/epoch_loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_epoch_loss[i]))
+                f.write('\n')
+
+    def save_loss(self,accuracy):
+        m = self.record_loss.shape[0]
+        with open('saver_bp_best/saver_bp_'+str(accuracy)+'/loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_loss[i]))
+                f.write('\n')
+    
+    def save_best(self,accuracy):
+        saver = tf.train.Saver(max_to_keep = 5)
+        saver.save(self.sess,'saver_bp_best/saver_bp_'+str(accuracy)+'/muscle.ckpt')
 
     def predict(self):
         m = self.testData.shape[0]
@@ -87,6 +114,7 @@ class run_main():
         print(correct)
         accuracy = correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
+        return accuracy
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData
@@ -106,8 +134,23 @@ class run_main():
             mini_batch = (mini_batch_X, mini_batch_Y)
             mini_batches.append(mini_batch)
         return mini_batches
+    
+    def save(self):
+        saver = tf.train.Saver(max_to_keep = 5)
+        saver.save(self.sess,'saver_bp/muscle.ckpt')
+
+    def load(self):
+        saver = tf.train.Saver()
+        saver.restore(self.sess,'saver_bp/muscle.ckpt')
 
 if __name__ == "__main__":
-    ram_better = run_main()
-    ram_better.train(40)
-    ram_better.predict()
+    for i in range(5):
+        print('the time:'+str(i+1))
+        ram_better = run_main()
+        ram_better.train(40) 
+        accuracy = ram_better.predict()
+        if accuracy >0.7:
+            ram_better.save_best(accuracy)
+            ram_better.save_loss(accuracy)
+            ram_better.save_epoch_loss(accuracy)
+        tf.reset_default_graph()

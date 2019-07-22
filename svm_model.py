@@ -7,14 +7,6 @@ class svmclassify():
         self.trainFlag = trainFlag
         self.testData = testData
         self.testFlag = testFlag
-        # self.number_data = 195
-        # self.onehot()  # data normalization
-
-    # def onehot(self):
-    #     one_hot = np.vstack((self.trainData, self.testData))
-    #     one_hot = (one_hot - one_hot.min(0))/(one_hot.max(0) - one_hot.min(0))
-    #     self.trainData = one_hot[0:self.number_data*15, :]
-    #     self.testData = one_hot[self.number_data*15:, :]
 
     def classify(self):
         clf = svm.SVC(decision_function_shape='ovo', gamma='auto')

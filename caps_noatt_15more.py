@@ -67,29 +67,6 @@ class CapsLayer(object):
         vec_squashed = scalar_factor * vector  
         return(vec_squashed)
 
-class spatial_attention():
-    def __init__(self,input_shape):
-        self.w_tanh = self.weight_variable((1,input_shape[1].value,input_shape[2].value,input_shape[3].value))
-        self.b_tanh = self.bias_variable((1,input_shape[1].value,input_shape[2].value,1))
-
-        
-    def __call__(self,input):
-        fc_first = tf.nn.tanh(tf.reduce_sum(tf.multiply(input,self.w_tanh),axis=3,keep_dims=True) + self.b_tanh)
-        spatial_attention_max = tf.nn.max_pool(fc_first, ksize=[1,2,2,1], strides=[1,1,1,1], padding='SAME')
-        spatial_attention_mean = tf.nn.avg_pool(fc_first, ksize=[1,2,2,1], strides=[1,1,1,1], padding='SAME')
-        spatial_attention_concat = tf.concat([spatial_attention_max,spatial_attention_mean],axis=3)
-        self.attention= tf.contrib.layers.conv2d(spatial_attention_concat, num_outputs = 1,kernel_size = 5, stride = 1,padding='SAME',activation_fn=tf.nn.sigmoid)
-        output = tf.multiply(input,self.attention)
-        return output
-
-    def weight_variable(self,shape):
-        initial = tf.truncated_normal(shape = shape, stddev = 0.01)  # define weight
-        return tf.Variable(initial)
-
-    def bias_variable(self,shape):
-        initial = tf.constant(0.01, shape = shape)
-        return tf.Variable(initial)
-
 class Capsnet():
     def __init__(self,image_size,channal,num_classes,lambda_val,m_plus,m_minus,epsilon,iter_routing,num_outputs_decode,num_dims_decode,batch_size):
         self.image_size = image_size
@@ -111,13 +88,9 @@ class Capsnet():
         label_onehot = tf.one_hot(self.label,depth=num_classes,axis=1,dtype = tf.float32)
         with tf.variable_scope('Conv1_layer'):
             conv1 = tf.contrib.layers.conv2d(self.image, num_outputs = self.num_outputs_layer_conv2d1,kernel_size = 5, stride = 1,padding='VALID')
-        attention_shape = conv1.get_shape()
-        with tf.variable_scope('soft_attention'):
-            spatialAtt = spatial_attention(attention_shape)
-            attention1 = spatialAtt(conv1)
         with tf.variable_scope('PrimaryCaps_layer'):
             primaryCaps = CapsLayer(self.batch_size,self.epsilon,self.iter_routing,num_outputs=self.num_outputs_layer_PrimaryCaps, vec_len=self.num_dims_layer_PrimaryCaps, with_routing=False, layer_type='CONV')
-            caps1 = primaryCaps(attention1, kernel_size=5, stride=1)
+            caps1 = primaryCaps(conv1, kernel_size=5, stride=1)
         with tf.variable_scope('DigitCaps_layer'):
             digitCaps = CapsLayer(self.batch_size,self.epsilon,self.iter_routing, num_outputs = self.num_outputs_decode, vec_len=self.num_dims_decode, with_routing=True, layer_type='FC')
             self.caps2 = digitCaps(caps1)
@@ -170,7 +143,7 @@ class run_main():
                 feature_graph[i,:,:,j] = single_graph
         feature_graph = feature_graph.reshape((feature.shape[0],-1))
         return feature_graph
-        
+
     def sigmoid(self,single_feature):
         output_s = 1/(1+np.exp(-single_feature))
         return output_s
@@ -201,19 +174,17 @@ class run_main():
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
         self.save()
-        self.save_loss()
-        self.save_epoch_loss()
-    
-    def save_epoch_loss(self):
+
+    def save_epoch_loss(self,accuracy):
         m = self.record_epoch_loss.shape[0]
-        with open('saver_caps/epoch_loss.txt','w') as f:
+        with open('saver_caps_noatt_best/saver_caps_noatt_'+str(accuracy)+'/epoch_loss.txt','w') as f:
             for i in range(m):
                 f.write(str(self.record_epoch_loss[i]))
                 f.write('\n')
 
-    def save_loss(self):
+    def save_loss(self,accuracy):
         m = self.record_loss.shape[0]
-        with open('saver_caps/loss.txt','w') as f:
+        with open('saver_caps_noatt_best/saver_caps_noatt_'+str(accuracy)+'/loss.txt','w') as f:
             for i in range(m):
                 f.write(str(self.record_loss[i]))
                 f.write('\n')
@@ -230,6 +201,7 @@ class run_main():
         print(correct)
         accuracy = correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
+        return accuracy
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData
@@ -252,13 +224,24 @@ class run_main():
 
     def save(self):
         saver = tf.train.Saver(max_to_keep = 5)
-        saver.save(self.sess,'saver_caps/muscle.ckpt')
+        saver.save(self.sess,'saver_caps_noatt/muscle.ckpt')
 
     def load(self):
         saver = tf.train.Saver()
-        saver.restore(self.sess,'saver_caps/muscle.ckpt')
-
+        saver.restore(self.sess,'saver_caps_noatt/muscle.ckpt')
+        
+    def save_best(self,accuracy):
+        saver = tf.train.Saver(max_to_keep = 5)
+        saver.save(self.sess,'saver_caps_noatt_best/saver_caps_noatt_'+str(accuracy)+'/muscle.ckpt')
+        
 if __name__ == "__main__":
-    ram_better = run_main()
-    ram_better.train(40) 
-    ram_better.predict()
+    for i in range(15):
+        print('the time:'+str(i+1))
+        ram_better = run_main()
+        ram_better.train(40) 
+        accuracy = ram_better.predict()
+        if accuracy >0.75:
+            ram_better.save_best(accuracy)
+            ram_better.save_loss(accuracy)
+            ram_better.save_epoch_loss(accuracy)
+        tf.reset_default_graph()
