@@ -240,7 +240,7 @@ if __name__ == "__main__":
         ram_better = run_main()
         ram_better.train(40) 
         accuracy = ram_better.predict()
-        if accuracy >0.75:
+        if accuracy >0.7:
             ram_better.save_best(accuracy)
             ram_better.save_loss(accuracy)
             ram_better.save_epoch_loss(accuracy)
