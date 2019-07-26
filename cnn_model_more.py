@@ -129,38 +129,74 @@ class run_main():
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
         self.save()
-
-    def save_epoch_loss(self,accuracy):
-        m = self.record_epoch_loss.shape[0]
-        with open('saver_cnn_best/saver_cnn_'+str(accuracy)+'/epoch_loss.txt','w') as f:
-            for i in range(m):
-                f.write(str(self.record_epoch_loss[i]))
-                f.write('\n')
-
-    def save_loss(self,accuracy):
-        m = self.record_loss.shape[0]
-        with open('saver_cnn_best/saver_cnn_'+str(accuracy)+'/loss.txt','w') as f:
-            for i in range(m):
-                f.write(str(self.record_loss[i]))
-                f.write('\n')
-    
-    def save_best(self,accuracy):
-        saver = tf.train.Saver(max_to_keep = 5)
-        saver.save(self.sess,'saver_cnn_best/saver_cnn_'+str(accuracy)+'/muscle.ckpt')
         
+    # def predict(self):
+    #     m = self.testData.shape[0]
+    #     num = int(m/self.batch_size)
+    #     correct = 0
+    #     for i in range(num):
+    #         datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
+    #         answer = self.sess.run(self.cnn.out_predict, feed_dict={self.cnn.image_input:datafortest,self.cnn.keep_prob:1})
+    #         prediction = np.argmax(answer,axis=1)
+    #         correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
+    #     print(correct)
+    #     accuracy = correct/(self.batch_size*num)
+    #     print(accuracy)
+    #     return accuracy
+    
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
-        correct = 0
+        action_batch = 195
+        self.correct = 0
+        self.correct_action = np.zeros(self.num_classes)
+        j = 0
         for i in range(num):
             datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
             answer = self.sess.run(self.cnn.out_predict, feed_dict={self.cnn.image_input:datafortest,self.cnn.keep_prob:1})
             prediction = np.argmax(answer,axis=1)
-            correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
-        print(correct)
-        accuracy = correct/(self.batch_size*num)
-        print(accuracy)
+            predict_transform = (prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0
+            self.correct += np.sum(predict_transform)
+            if action_batch*(j+1)>i*self.batch_size and action_batch*(j+1)<(i+1)*self.batch_size:
+                interval = action_batch*(j+1) - i*self.batch_size
+                self.correct_action[j] += np.sum(predict_transform[:interval])
+                j = j+1
+                self.correct_action[j] += np.sum(predict_transform[interval:])
+            else:
+                self.correct_action[j] += np.sum(predict_transform)  
+        print(self.correct_action)
+        print(self.correct)
+        accuracy = self.correct/(self.batch_size*num)
+        print('test accuracy = {:3.6f}'.format(accuracy))
         return accuracy
+
+    def save_best(self,accuracy):
+        correct_num = 0
+        correct_num_sum = np.sum(self.correct_action>=110)
+        if correct_num_sum == 5:
+            correct_num = 1
+        #save best
+        saver = tf.train.Saver(max_to_keep = 5)
+        saver.save(self.sess,'saver_cnn_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/muscle.ckpt')
+        #saver correct
+        m = self.correct_action.shape[0]
+        with open('saver_cnn_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/correct.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.correct_action[i]))
+                f.write('\n')
+            f.write(str(self.correct))
+        #saver epoch_loss
+        m = self.record_epoch_loss.shape[0]
+        with open('saver_cnn_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/epoch_loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_epoch_loss[i]))
+                f.write('\n')
+        #saver loss
+        m = self.record_loss.shape[0]
+        with open('saver_cnn_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_loss[i]))
+                f.write('\n')
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData
@@ -197,6 +233,4 @@ if __name__ == "__main__":
         accuracy = ram_better.predict()
         if accuracy >0.7:
             ram_better.save_best(accuracy)
-            ram_better.save_loss(accuracy)
-            ram_better.save_epoch_loss(accuracy)
         tf.reset_default_graph()

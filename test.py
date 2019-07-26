@@ -11,5 +11,8 @@ import numpy as np
 # with tf.Session() as sess:
 #     answer = sess.run(c,feed_dict={a:a1,b:a2})
 #     print(answer)
-a  = np.zeros(5)
-print(a.shape[0])
+a = np.random.randint(4,9,(5))
+
+print(a)
+b= np.sum(a>=6)
+print(b)

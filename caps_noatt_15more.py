@@ -175,33 +175,59 @@ class run_main():
             i = i + 1
         self.save()
 
-    def save_epoch_loss(self,accuracy):
-        m = self.record_epoch_loss.shape[0]
-        with open('saver_caps_noatt_best/saver_caps_noatt_'+str(accuracy)+'/epoch_loss.txt','w') as f:
-            for i in range(m):
-                f.write(str(self.record_epoch_loss[i]))
-                f.write('\n')
-
-    def save_loss(self,accuracy):
-        m = self.record_loss.shape[0]
-        with open('saver_caps_noatt_best/saver_caps_noatt_'+str(accuracy)+'/loss.txt','w') as f:
-            for i in range(m):
-                f.write(str(self.record_loss[i]))
-                f.write('\n')
-
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
-        correct = 0
+        action_batch = 195
+        self.correct = 0
+        self.correct_action = np.zeros(self.num_classes)
+        j = 0
         for i in range(num):
             datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
             answer = self.sess.run(self.capsnet_model.v_length,feed_dict={self.capsnet_model.image: datafortest})
             prediction = np.argmax(np.squeeze(answer),axis=1)
-            correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
-        print(correct)
-        accuracy = correct/(self.batch_size*num)
+            predict_transform = (prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0
+            self.correct += np.sum(predict_transform)
+            if action_batch*(j+1)>i*self.batch_size and action_batch*(j+1)<(i+1)*self.batch_size:
+                interval = action_batch*(j+1) - i*self.batch_size
+                self.correct_action[j] += np.sum(predict_transform[:interval])
+                j = j+1
+                self.correct_action[j] += np.sum(predict_transform[interval:])
+            else:
+                self.correct_action[j] += np.sum(predict_transform)  
+        print(self.correct_action)
+        print(self.correct)
+        accuracy = self.correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
         return accuracy
+
+    def save_best(self,accuracy):
+        correct_num = 0
+        correct_num_sum = np.sum(self.correct_action>=110)
+        if correct_num_sum == 5:
+            correct_num = 1
+        #save best
+        saver = tf.train.Saver(max_to_keep = 5)
+        saver.save(self.sess,'saver_caps_noatt_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/muscle.ckpt')
+        #saver correct
+        m = self.correct_action.shape[0]
+        with open('saver_caps_noatt_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/correct.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.correct_action[i]))
+                f.write('\n')
+            f.write(str(self.correct))
+        #saver epoch_loss
+        m = self.record_epoch_loss.shape[0]
+        with open('saver_caps_noatt_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/epoch_loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_epoch_loss[i]))
+                f.write('\n')
+        #saver loss
+        m = self.record_loss.shape[0]
+        with open('saver_caps_noatt_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_loss[i]))
+                f.write('\n')
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData
@@ -229,10 +255,6 @@ class run_main():
     def load(self):
         saver = tf.train.Saver()
         saver.restore(self.sess,'saver_caps_noatt/muscle.ckpt')
-        
-    def save_best(self,accuracy):
-        saver = tf.train.Saver(max_to_keep = 5)
-        saver.save(self.sess,'saver_caps_noatt_best/saver_caps_noatt_'+str(accuracy)+'/muscle.ckpt')
         
 if __name__ == "__main__":
     for i in range(15):

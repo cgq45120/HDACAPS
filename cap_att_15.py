@@ -110,17 +110,17 @@ class Capsnet():
         self.label = tf.placeholder(tf.int64,[self.batch_size,1])
         label_onehot = tf.one_hot(self.label,depth=num_classes,axis=1,dtype = tf.float32)
         with tf.variable_scope('Conv1_layer'):
-            conv1 = tf.contrib.layers.conv2d(self.image, num_outputs = self.num_outputs_layer_conv2d1,kernel_size = 5, stride = 1,padding='VALID')
-        attention_shape = conv1.get_shape()
+            self.conv1 = tf.contrib.layers.conv2d(self.image, num_outputs = self.num_outputs_layer_conv2d1,kernel_size = 5, stride = 1,padding='VALID')
+        attention_shape = self.conv1.get_shape()
         with tf.variable_scope('soft_attention'):
-            spatialAtt = spatial_attention(attention_shape)
-            attention1 = spatialAtt(conv1)
+            self.spatialAtt = spatial_attention(attention_shape)
+            self.attention1 = self.spatialAtt(self.conv1)
         with tf.variable_scope('PrimaryCaps_layer'):
             primaryCaps = CapsLayer(self.batch_size,self.epsilon,self.iter_routing,num_outputs=self.num_outputs_layer_PrimaryCaps, vec_len=self.num_dims_layer_PrimaryCaps, with_routing=False, layer_type='CONV')
-            caps1 = primaryCaps(attention1, kernel_size=5, stride=1)
+            self.caps1 = primaryCaps(self.attention1, kernel_size=5, stride=1)
         with tf.variable_scope('DigitCaps_layer'):
             digitCaps = CapsLayer(self.batch_size,self.epsilon,self.iter_routing, num_outputs = self.num_outputs_decode, vec_len=self.num_dims_decode, with_routing=True, layer_type='FC')
-            self.caps2 = digitCaps(caps1)
+            self.caps2 = digitCaps(self.caps1)
         with tf.variable_scope('Masking'):
             self.v_length = tf.sqrt(tf.reduce_sum(tf.square(self.caps2), axis=2, keep_dims=True) + self.epsilon)
         
@@ -201,7 +201,6 @@ class run_main():
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
         self.save()
-        self.save_loss()
         self.save_epoch_loss()
     
     def save_epoch_loss(self):
@@ -211,25 +210,50 @@ class run_main():
                 f.write(str(self.record_epoch_loss[i]))
                 f.write('\n')
 
-    def save_loss(self):
         m = self.record_loss.shape[0]
         with open('saver_caps/loss.txt','w') as f:
             for i in range(m):
                 f.write(str(self.record_loss[i]))
                 f.write('\n')
-
+    
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
+        action_batch = 195
         correct = 0
+        correct_action = np.zeros(self.num_classes)
+        j = 0
         for i in range(num):
             datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
             answer = self.sess.run(self.capsnet_model.v_length,feed_dict={self.capsnet_model.image: datafortest})
             prediction = np.argmax(np.squeeze(answer),axis=1)
-            correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
+            predict_transform = (prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0
+            correct += np.sum(predict_transform)
+            if action_batch*(j+1)>i*self.batch_size and action_batch*(j+1)<(i+1)*self.batch_size:
+                interval = action_batch*(j+1) - i*self.batch_size
+                correct_action[j] += np.sum(predict_transform[:interval])
+                j = j+1
+                correct_action[j] += np.sum(predict_transform[interval:])
+            else:
+                correct_action[j] += np.sum(predict_transform)  
+        print(correct_action)
         print(correct)
         accuracy = correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
+
+    # def predict(self):
+    #     m = self.testData.shape[0]
+    #     num = int(m/self.batch_size)
+    #     correct = 0
+    #     for i in range(num):
+    #         datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
+    #         answer = self.sess.run(self.capsnet_model.v_length,feed_dict={self.capsnet_model.image: datafortest})
+    #         prediction = np.argmax(np.squeeze(answer),axis=1)
+    #         correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
+    #     print(correct)
+    #     accuracy = correct/(self.batch_size*num)
+    #     print('test accuracy = {:3.6f}'.format(accuracy))
+
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData

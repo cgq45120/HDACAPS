@@ -5,8 +5,10 @@ from tensorflow.examples.tutorials.mnist import input_data
 from tqdm import tqdm
 import import_data
 import math
+import matplotlib.pyplot as plt
 # %matplotlib inline
 # %config InlineBackend.figure_format = 'svg' #高画质图
+
 class CapsLayer(object):
     def __init__(self,batch_size, epsilon,iter_routing,num_outputs, vec_len, with_routing=True, layer_type='FC'):
         self.epsilon = epsilon
@@ -109,17 +111,17 @@ class Capsnet():
         self.label = tf.placeholder(tf.int64,[self.batch_size,1])
         label_onehot = tf.one_hot(self.label,depth=num_classes,axis=1,dtype = tf.float32)
         with tf.variable_scope('Conv1_layer'):
-            self.conv1 = tf.contrib.layers.conv2d(self.image, num_outputs = self.num_outputs_layer_conv2d1,kernel_size = 5, stride = 1,padding='VALID')
-        attention_shape = self.conv1.get_shape()
+            conv1 = tf.contrib.layers.conv2d(self.image, num_outputs = self.num_outputs_layer_conv2d1,kernel_size = 5, stride = 1,padding='VALID')
+        attention_shape = conv1.get_shape()
         with tf.variable_scope('soft_attention'):
             self.spatialAtt = spatial_attention(attention_shape)
-            self.attention1 = self.spatialAtt(self.conv1)
+            attention1 = self.spatialAtt(conv1)
         with tf.variable_scope('PrimaryCaps_layer'):
             primaryCaps = CapsLayer(self.batch_size,self.epsilon,self.iter_routing,num_outputs=self.num_outputs_layer_PrimaryCaps, vec_len=self.num_dims_layer_PrimaryCaps, with_routing=False, layer_type='CONV')
-            self.caps1 = primaryCaps(self.attention1, kernel_size=5, stride=1)
+            caps1 = primaryCaps(attention1, kernel_size=5, stride=1)
         with tf.variable_scope('DigitCaps_layer'):
             digitCaps = CapsLayer(self.batch_size,self.epsilon,self.iter_routing, num_outputs = self.num_outputs_decode, vec_len=self.num_dims_decode, with_routing=True, layer_type='FC')
-            self.caps2 = digitCaps(self.caps1)
+            self.caps2 = digitCaps(caps1)
         with tf.variable_scope('Masking'):
             self.v_length = tf.sqrt(tf.reduce_sum(tf.square(self.caps2), axis=2, keep_dims=True) + self.epsilon)
         
@@ -164,146 +166,37 @@ class run_main():
         for i in range(feature.shape[0]):
             for j in range(feature.shape[1]):
                 single_use = np.hstack((feature[i,j,:],1)).reshape(-1,self.image_size)
-                # single_graph = 0.5*np.sqrt(single_use.T*single_use)
                 single_graph = self.sigmoid(0.5*np.sqrt(single_use.T*single_use))
                 feature_graph[i,:,:,j] = single_graph
         feature_graph = feature_graph.reshape((feature.shape[0],-1))
         return feature_graph
-
+        
     def sigmoid(self,single_feature):
         output_s = 1/(1+np.exp(-single_feature))
         return output_s
 
-    def train(self,iteration):
-        seed = 3
-        m = self.trainData.shape[0]
-        i = 0
-        num_minibatches = int(m / self.batch_size)
-        self.record_epoch_loss = np.zeros(iteration)
-        self.record_loss = np.zeros(num_minibatches*iteration)
-        for step in tqdm(range(iteration), total=iteration, ncols=70, leave=False, unit='b'):
-            epoch_cost = 0
-            seed += 1
-            minibatches = self.random_mini_batches(self.batch_size,seed)
-            j = 0
-            for minibatch in minibatches:
-                (minibatch_X, minibatch_Y) = minibatch
-                minibatch_X = minibatch_X.reshape((-1,self.image_size,self.image_size,self.channal))
-                minibatch_Y = minibatch_Y.reshape((-1,1))
-                output_feed = [self.capsnet_model.train_op, self.capsnet_model.total_loss]
-                _, loss = self.sess.run(output_feed, feed_dict={self.capsnet_model.image: minibatch_X, self.capsnet_model.label: minibatch_Y})
-                epoch_cost = epoch_cost + loss / num_minibatches
-                self.record_loss[i*num_minibatches+j] = loss
-                j = j + 1
-            if step % 1 == 0 or step == iteration-1:
-                print('step {}:loss = {:3.10f}'.format(step,epoch_cost))
-            self.record_epoch_loss[i] = epoch_cost
-            i = i + 1
-        self.save()
-
-    def save_best(self,accuracy):
-        correct_num = 0
-        correct_num_sum = np.sum(self.correct_action>=110)
-        if correct_num_sum == 5:
-            correct_num = 1
-        #save best
-        saver = tf.train.Saver(max_to_keep = 5)
-        saver.save(self.sess,'saver_caps_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/muscle.ckpt')
-        #saver correct
-        m = self.correct_action.shape[0]
-        with open('saver_caps_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/correct.txt','w') as f:
-            for i in range(m):
-                f.write(str(self.correct_action[i]))
-                f.write('\n')
-            f.write(str(self.correct))
-        #saver epoch_loss
-        m = self.record_epoch_loss.shape[0]
-        with open('saver_caps_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/epoch_loss.txt','w') as f:
-            for i in range(m):
-                f.write(str(self.record_epoch_loss[i]))
-                f.write('\n')
-        #saver loss
-        m = self.record_loss.shape[0]
-        with open('saver_caps_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/loss.txt','w') as f:
-            for i in range(m):
-                f.write(str(self.record_loss[i]))
-                f.write('\n')
-
     def predict(self):
-        m = self.testData.shape[0]
-        num = int(m/self.batch_size)
-        action_batch = 195
-        self.correct = 0
-        self.correct_action = np.zeros(self.num_classes)
-        j = 0
-        for i in range(num):
-            datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
-            answer = self.sess.run(self.capsnet_model.v_length,feed_dict={self.capsnet_model.image: datafortest})
-            prediction = np.argmax(np.squeeze(answer),axis=1)
-            predict_transform = (prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0
-            self.correct += np.sum(predict_transform)
-            if action_batch*(j+1)>i*self.batch_size and action_batch*(j+1)<(i+1)*self.batch_size:
-                interval = action_batch*(j+1) - i*self.batch_size
-                self.correct_action[j] += np.sum(predict_transform[:interval])
-                j = j+1
-                self.correct_action[j] += np.sum(predict_transform[interval:])
-            else:
-                self.correct_action[j] += np.sum(predict_transform)  
-        print(self.correct_action)
-        print(self.correct)
-        accuracy = self.correct/(self.batch_size*num)
-        print('test accuracy = {:3.6f}'.format(accuracy))
-        return accuracy
- 
-    # def predict(self):
-    #     m = self.testData.shape[0]
-    #     num = int(m/self.batch_size)
-    #     correct = 0
-    #     for i in range(num):
-    #         datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
-    #         answer = self.sess.run(self.capsnet_model.v_length,feed_dict={self.capsnet_model.image: datafortest})
-    #         prediction = np.argmax(np.squeeze(answer),axis=1)
-    #         correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
-    #     print(correct)
-    #     accuracy = correct/(self.batch_size*num)
-    #     print('test accuracy = {:3.6f}'.format(accuracy))
-    #     return accuracy
+        i=27
+        datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
+        answer,attention_out = self.sess.run([self.capsnet_model.v_length,self.capsnet_model.spatialAtt.attention],feed_dict={self.capsnet_model.image: datafortest})
+        prediction = np.argmax(np.squeeze(answer),axis=1)
+        predict_action = (prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0
+        print(predict_action)
+        for j in range(self.batch_size):
+            self.plot_attention(attention_out[j,:,:,:],j)
 
-    def random_mini_batches(self, mini_batch_size=64, seed=0):
-        X = self.trainData
-        Y = self.trainFlag
-        m = X.shape[0]                  # number of training examples
-        mini_batches = []
-        np.random.seed(seed)
-        permutation = list(np.random.permutation(m))  # 随机排序0-(m-1)
-        shuffled_X = X[permutation, :]
-        shuffled_Y = Y[permutation, :].reshape((m,Y.shape[1]))
-        mini_batch_X = shuffled_X[0 * mini_batch_size: 0 *mini_batch_size + mini_batch_size,:]
-        mini_batch_Y = shuffled_Y[0 * mini_batch_size: 0 *mini_batch_size + mini_batch_size,:]
-        num_complete_minibatches = math.floor(m/mini_batch_size)
-        for k in range(0, num_complete_minibatches):
-            mini_batch_X = shuffled_X[k * mini_batch_size: k *mini_batch_size + mini_batch_size, :]
-            mini_batch_Y = shuffled_Y[k * mini_batch_size: k *mini_batch_size + mini_batch_size,:]
-            mini_batch = (mini_batch_X, mini_batch_Y)
-            mini_batches.append(mini_batch)
-        return mini_batches
-
-    def save(self):
-        saver = tf.train.Saver(max_to_keep = 5)
-        saver.save(self.sess,'saver_caps/muscle.ckpt')
+    def plot_attention(self,attention,j):
+        att = np.squeeze(attention*255)
+        print(att)
+        plt.imshow(att)
+        # plt.show()
+        plt.savefig('saver_picture/att{}.png'.format(str(j+1)),dpi=600)
 
     def load(self):
         saver = tf.train.Saver()
-        saver.restore(self.sess,'saver_caps/muscle.ckpt')
-        
+        saver.restore(self.sess,'saver_caps_0/muscle.ckpt')
 
-        
 if __name__ == "__main__":
-    for i in range(5):
-        print('the time:'+str(i+1))
-        ram_better = run_main()
-        ram_better.train(40) 
-        accuracy = ram_better.predict()
-        if accuracy >0.75:
-            ram_better.save_best(accuracy)
-        tf.reset_default_graph()
+    ram_better = run_main()
+    ram_better.load()
+    ram_better.predict()
