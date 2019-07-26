@@ -203,7 +203,7 @@ class run_main():
 
     def save_best(self,accuracy):
         correct_num = 0
-        correct_num_sum = np.sum(self.correct_action>=110)
+        correct_num_sum = np.sum(self.correct_action>=90)
         if correct_num_sum == 5:
             correct_num = 1
         #save best
@@ -264,6 +264,4 @@ if __name__ == "__main__":
         accuracy = ram_better.predict()
         if accuracy >0.7:
             ram_better.save_best(accuracy)
-            ram_better.save_loss(accuracy)
-            ram_better.save_epoch_loss(accuracy)
         tf.reset_default_graph()

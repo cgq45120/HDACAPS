@@ -128,7 +128,7 @@ class run_main():
                 print('step {}: learing_rate={:3.10f}\t loss = {:3.10f}\t '.format(step, learning_rate_now,epoch_cost))
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
-        self.save()
+        # self.save()
         
     # def predict(self):
     #     m = self.testData.shape[0]
@@ -147,7 +147,7 @@ class run_main():
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
-        action_batch = 195
+        action_batch = 195*6
         self.correct = 0
         self.correct_action = np.zeros(self.num_classes)
         j = 0
@@ -172,7 +172,7 @@ class run_main():
 
     def save_best(self,accuracy):
         correct_num = 0
-        correct_num_sum = np.sum(self.correct_action>=110)
+        correct_num_sum = np.sum(self.correct_action>=90)
         if correct_num_sum == 5:
             correct_num = 1
         #save best
@@ -226,11 +226,11 @@ class run_main():
         saver.restore(self.sess,'saver_cnn/muscle.ckpt')
 
 if __name__ == "__main__":
-    for i in range(5):
+    for i in range(1):
         print('the time:'+str(i+1))
         ram_better = run_main()
         ram_better.train(40) 
         accuracy = ram_better.predict()
-        if accuracy >0.7:
+        if accuracy >0.5:
             ram_better.save_best(accuracy)
         tf.reset_default_graph()

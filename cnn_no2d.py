@@ -113,7 +113,6 @@ class run_main():
         self.max_gradient_norm = 10
         self.learning_rate = 5e-4
         self.batch_size = 16
-
         self.cnn = model_cnn(self.image_size,self.channal, self.num_classes, self.learning_rate,self.max_gradient_norm)
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=False))
         self.sess.run(tf.global_variables_initializer())
@@ -121,10 +120,14 @@ class run_main():
     def train(self,iteration):
         seed = 3
         m = self.trainData.shape[0]
+        i = 0
         num_minibatches = int(m / self.batch_size)
+        self.record_epoch_loss = np.zeros(iteration)
+        self.record_loss = np.zeros(num_minibatches*iteration)
         for step in tqdm(range(iteration), total=iteration, ncols=70, leave=False, unit='b'):
             epoch_cost = 0
             seed += 1
+            j = 0
             minibatches = self.random_mini_batches(self.batch_size,seed)
             for minibatch in minibatches:
                 (minibatch_X, minibatch_Y) = minibatch
@@ -132,22 +135,56 @@ class run_main():
                 output_feed = [self.cnn.train_op,self.cnn.cross_entropy,self.cnn.learning_rate]
                 _, loss ,learning_rate_now = self.sess.run(output_feed, feed_dict={self.cnn.image_input:minibatch_X,self.cnn.label_input:minibatch_Y,self.cnn.keep_prob:0.8})
                 epoch_cost = epoch_cost + loss / num_minibatches
+                self.record_loss[i*num_minibatches+j] = loss
+                j = j + 1
             if step % 1 == 0 or step == (iteration-1):
                 print('step {}: learing_rate={:3.10f}\t loss = {:3.10f}\t '.format(step, learning_rate_now,epoch_cost))
-        # self.save()
+            self.record_epoch_loss[i] = epoch_cost
+            i = i + 1
+        self.save()
+        self.save_epoch_loss()
+    
+    def save_epoch_loss(self):
+        m = self.record_epoch_loss.shape[0]
+        with open('saver_cnn_no2d/epoch_loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_epoch_loss[i]))
+                f.write('\n')
+
+        m = self.record_loss.shape[0]
+        with open('saver_cnn_no2d/loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_loss[i]))
+                f.write('\n')
 
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
+        action_batch = 195
         correct = 0
+        correct_action = np.zeros(self.num_classes)
+        j = 0
         for i in range(num):
             datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.channal,1))
             answer = self.sess.run(self.cnn.out_predict, feed_dict={self.cnn.image_input:datafortest,self.cnn.keep_prob:1})
             prediction = np.argmax(answer,axis=1)
-            correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
+            predict_transform = (prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0
+            correct += np.sum(predict_transform)
+            if action_batch*(j+1)>i*self.batch_size and action_batch*(j+1)<(i+1)*self.batch_size:
+                interval = action_batch*(j+1) - i*self.batch_size
+                correct_action[j] += np.sum(predict_transform[:interval])
+                j = j+1
+                correct_action[j] += np.sum(predict_transform[interval:])
+            else:
+                correct_action[j] += np.sum(predict_transform)  
+        print(correct_action)
         print(correct)
         accuracy = correct/(self.batch_size*num)
-        print(accuracy)
+        print('test accuracy = {:3.6f}'.format(accuracy))
+        with open('saver_cnn_no2d/correct.txt','w') as f:
+            for i in range(5):
+                f.write(str(correct_action[i]))
+                f.write('\n')
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData.reshape(-1,self.image_size*self.channal)
@@ -170,14 +207,14 @@ class run_main():
 
     def save(self):
         saver = tf.train.Saver(max_to_keep = 5)
-        saver.save(self.sess,'saver_cnn/muscle.ckpt')
+        saver.save(self.sess,'saver_cnn_no2d/muscle.ckpt')
 
     def load(self):
         saver = tf.train.Saver()
-        saver.restore(self.sess,'saver_cnn/muscle.ckpt')
+        saver.restore(self.sess,'saver_cnn_no2d/muscle.ckpt')
 
 if __name__ == "__main__":
     ram_better = run_main()
-    ram_better.train(1)
+    ram_better.train(40)
     ram_better.predict()
 

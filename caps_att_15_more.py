@@ -254,20 +254,6 @@ class run_main():
         accuracy = self.correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
         return accuracy
- 
-    # def predict(self):
-    #     m = self.testData.shape[0]
-    #     num = int(m/self.batch_size)
-    #     correct = 0
-    #     for i in range(num):
-    #         datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
-    #         answer = self.sess.run(self.capsnet_model.v_length,feed_dict={self.capsnet_model.image: datafortest})
-    #         prediction = np.argmax(np.squeeze(answer),axis=1)
-    #         correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
-    #     print(correct)
-    #     accuracy = correct/(self.batch_size*num)
-    #     print('test accuracy = {:3.6f}'.format(accuracy))
-    #     return accuracy
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData
@@ -295,8 +281,6 @@ class run_main():
     def load(self):
         saver = tf.train.Saver()
         saver.restore(self.sess,'saver_caps/muscle.ckpt')
-        
-
         
 if __name__ == "__main__":
     for i in range(5):

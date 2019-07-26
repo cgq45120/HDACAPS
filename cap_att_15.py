@@ -240,6 +240,10 @@ class run_main():
         print(correct)
         accuracy = correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
+        with open('saver_caps/correct.txt','w') as f:
+            for i in range(5):
+                f.write(str(correct_action[i]))
+                f.write('\n')
 
     # def predict(self):
     #     m = self.testData.shape[0]

@@ -22,7 +22,7 @@ class model_cnn(object):
         self.keep_prob = tf.placeholder(tf.float32)
         self.learning_rate = learning_rate
         self.global_step = tf.Variable(0, trainable=False)
-        self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step,200,0.97,staircase=True),1e-7)
+        self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step,100,0.97,staircase=True),1e-7)
         self.m_plus = 0.9
         self.m_minus = 0.1
         self.lambda_val = 0.5
@@ -40,7 +40,7 @@ class model_cnn(object):
         self.b_second = bias_variable([128])
         second_out = tf.nn.relu(tf.nn.conv2d(first_out_pool,self.W_second,strides=[1,1,1,1], padding='SAME')+self.b_second)
         second_out_pool = tf.nn.max_pool(second_out, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
-
+    
         # 全连接
         self.W_fc1 = weight_variable([4*4*128, 512])
         self.b_fc1 = bias_variable([512])
@@ -54,8 +54,8 @@ class model_cnn(object):
         self.output_logit = tf.add(tf.matmul(h_fc1_drop, self.W_fc2) ,self.b_fc2)
 
         #loss 1
-        # self.out_predict = tf.nn.softmax(self.output_logit)
-        # self.cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = self.output_logit, labels = label_onehot))
+        # self.out_predict = tf.nn.softmax(output_logit)
+        # self.cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = output_logit, labels = label_onehot))
 
         #loss 2
         self.out_predict = tf.nn.softmax(self.output_logit)
@@ -93,7 +93,6 @@ class run_main():
         for i in range(feature.shape[0]):
             for j in range(feature.shape[1]):
                 single_use = np.hstack((feature[i,j,:],1)).reshape(-1,self.image_size)
-                # single_graph = 0.5*np.sqrt(single_use.T*single_use)
                 single_graph = self.sigmoid(0.5*np.sqrt(single_use.T*single_use))
                 feature_graph[i,:,:,j] = single_graph
         feature_graph = feature_graph.reshape((feature.shape[0],-1))
@@ -106,10 +105,14 @@ class run_main():
     def train(self,iteration):
         seed = 3
         m = self.trainData.shape[0]
+        i = 0
         num_minibatches = int(m / self.batch_size)
+        self.record_epoch_loss = np.zeros(iteration)
+        self.record_loss = np.zeros(num_minibatches*iteration)
         for step in tqdm(range(iteration), total=iteration, ncols=70, leave=False, unit='b'):
             epoch_cost = 0
             seed += 1
+            j = 0
             minibatches = self.random_mini_batches(self.batch_size,seed)
             for minibatch in minibatches:
                 (minibatch_X, minibatch_Y) = minibatch
@@ -117,47 +120,67 @@ class run_main():
                 output_feed = [self.cnn.train_op,self.cnn.cross_entropy,self.cnn.learning_rate]
                 _, loss ,learning_rate_now = self.sess.run(output_feed, feed_dict={self.cnn.image_input:minibatch_X,self.cnn.label_input:minibatch_Y,self.cnn.keep_prob:0.8})
                 epoch_cost = epoch_cost + loss / num_minibatches
+                self.record_loss[i*num_minibatches+j] = loss
+                j = j + 1
             if step % 1 == 0 or step == (iteration-1):
                 print('step {}: learing_rate={:3.10f}\t loss = {:3.10f}\t '.format(step, learning_rate_now,epoch_cost))
+            self.record_epoch_loss[i] = epoch_cost
+            i = i + 1
         self.save()
-
-    # def predict(self):
-    #     m = self.testData.shape[0]
-    #     num = int(m/self.batch_size)
-    #     correct = 0
-    #     for i in range(num):
-    #         datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
-    #         answer = self.sess.run(self.cnn.out_predict, feed_dict={self.cnn.image_input:datafortest,self.cnn.keep_prob:1})
-    #         prediction = np.argmax(answer,axis=1)
-    #         correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
-    #     print(correct)
-    #     accuracy = correct/(self.batch_size*num)
-    #     print(accuracy)
-
+        
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
         action_batch = 195
-        correct = 0
-        correct_action = np.zeros(self.num_classes)
+        self.correct = 0
+        self.correct_action = np.zeros(self.num_classes)
         j = 0
         for i in range(num):
             datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
             answer = self.sess.run(self.cnn.out_predict, feed_dict={self.cnn.image_input:datafortest,self.cnn.keep_prob:1})
             prediction = np.argmax(answer,axis=1)
             predict_transform = (prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0
-            correct += np.sum(predict_transform)
+            self.correct += np.sum(predict_transform)
             if action_batch*(j+1)>i*self.batch_size and action_batch*(j+1)<(i+1)*self.batch_size:
                 interval = action_batch*(j+1) - i*self.batch_size
-                correct_action[j] += np.sum(predict_transform[:interval])
+                self.correct_action[j] += np.sum(predict_transform[:interval])
                 j = j+1
-                correct_action[j] += np.sum(predict_transform[interval:])
+                self.correct_action[j] += np.sum(predict_transform[interval:])
             else:
-                correct_action[j] += np.sum(predict_transform)  
-        print(correct_action)
-        print(correct)
-        accuracy = correct/(self.batch_size*num)
+                self.correct_action[j] += np.sum(predict_transform)  
+        print(self.correct_action)
+        print(self.correct)
+        accuracy = self.correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
+        return accuracy
+
+    def save_best(self,accuracy):
+        correct_num = 0
+        correct_num_sum = np.sum(self.correct_action>=90)
+        if correct_num_sum == 5:
+            correct_num = 1
+        #save best
+        saver = tf.train.Saver(max_to_keep = 5)
+        saver.save(self.sess,'saver_cnn_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/muscle.ckpt')
+        #saver correct
+        m = self.correct_action.shape[0]
+        with open('saver_cnn_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/correct.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.correct_action[i]))
+                f.write('\n')
+            f.write(str(self.correct))
+        #saver epoch_loss
+        m = self.record_epoch_loss.shape[0]
+        with open('saver_cnn_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/epoch_loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_epoch_loss[i]))
+                f.write('\n')
+        #saver loss
+        m = self.record_loss.shape[0]
+        with open('saver_cnn_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/loss.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.record_loss[i]))
+                f.write('\n')
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData
@@ -187,6 +210,11 @@ class run_main():
         saver.restore(self.sess,'saver_cnn/muscle.ckpt')
 
 if __name__ == "__main__":
-    ram_better = run_main()
-    ram_better.train(1000)
-    ram_better.predict()
+    for i in range(5):
+        print('the time:'+str(i+1))
+        ram_better = run_main()
+        ram_better.train(40) 
+        accuracy = ram_better.predict()
+        if accuracy >0.7:
+            ram_better.save_best(accuracy)
+        tf.reset_default_graph()

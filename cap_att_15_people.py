@@ -201,7 +201,6 @@ class run_main():
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
         self.save()
-        self.save_loss()
         self.save_epoch_loss()
     
     def save_epoch_loss(self):
@@ -211,7 +210,6 @@ class run_main():
                 f.write(str(self.record_epoch_loss[i]))
                 f.write('\n')
 
-    def save_loss(self):
         m = self.record_loss.shape[0]
         with open('saver_caps/loss.txt','w') as f:
             for i in range(m):
@@ -242,7 +240,10 @@ class run_main():
         print(correct)
         accuracy = correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
-
+        with open('saver_caps/correct.txt','w') as f:
+            for i in range(5):
+                f.write(str(correct_action[i]))
+                f.write('\n')
     # def predict(self):
     #     m = self.testData.shape[0]
     #     num = int(m/self.batch_size)
@@ -286,5 +287,5 @@ class run_main():
 
 if __name__ == "__main__":
     ram_better = run_main()
-    ram_better.train(40) 
+    ram_better.train(25) 
     ram_better.predict()
