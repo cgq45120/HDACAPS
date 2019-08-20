@@ -8,15 +8,15 @@ import scipy.io
 import os
 
 def LoadData():
-    X_train_orig = np.zeros((195*15,300,16,1))   #44850
-    X_test_orig = np.zeros((1,195*15),dtype=int)
-    Y_train_orig = np.zeros((195*5,300,16,1))   #5850
-    Y_test_orig = np.zeros((1,195*5),dtype=int)
+    X_train_orig = np.zeros((195*210,300,16,1))   #44850
+    X_test_orig = np.zeros((1,195*210),dtype=int)
+    Y_train_orig = np.zeros((195*30,300,16,1))   #5850
+    Y_test_orig = np.zeros((1,195*30),dtype=int)
     path = '../all_data_wrist/'
     m = 0
     n = 0
     for files in os.listdir(path):
-        if int(files[10]) <= 4:
+        if int(files[2]) <= 7:
             EMG = scipy.io.loadmat(path + files)
             data = EMG['data']
             for i in range(195):
@@ -25,7 +25,7 @@ def LoadData():
                 X_train_orig[m * 195 + i, :, :, 0] = normal_data
                 X_test_orig[0, m * 195 + i] = int(files[6:7])
             m = m + 1
-        elif int(files[10]) <= 6:
+        elif int(files[2]) <= 8:
             EMG = scipy.io.loadmat(path + files)
             data = EMG['data']
             for i in range(195):
@@ -56,7 +56,7 @@ class model_cnn(object):
         self.keep_prob = tf.placeholder(tf.float32)
         self.learning_rate = learning_rate
         self.global_step = tf.Variable(0, trainable=False)
-        self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step,200,0.97,staircase=True),1e-7)
+        self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step,100,0.97,staircase=True),1e-7)
         self.m_plus = 0.9
         self.m_minus = 0.1
         self.lambda_val = 0.5
@@ -112,7 +112,7 @@ class run_main():
         self.num_classes = 5
         self.max_gradient_norm = 10
         self.learning_rate = 5e-4
-        self.batch_size = 16
+        self.batch_size = 32
         self.cnn = model_cnn(self.image_size,self.channal, self.num_classes, self.learning_rate,self.max_gradient_norm)
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=False))
         self.sess.run(tf.global_variables_initializer())
@@ -141,12 +141,12 @@ class run_main():
                 print('step {}: learing_rate={:3.10f}\t loss = {:3.10f}\t '.format(step, learning_rate_now,epoch_cost))
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
-        self.save()
-
+        # self.save()
+    
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
-        action_batch = 195
+        action_batch = 195*6
         self.correct = 0
         self.correct_action = np.zeros(self.num_classes)
         j = 0
@@ -228,10 +228,9 @@ if __name__ == "__main__":
     for i in range(1):
         print('the time:'+str(i+1))
         ram_better = run_main()
-        ram_better.train(25) 
+        ram_better.train(30) 
         accuracy = ram_better.predict()
         if accuracy >0.5:
             ram_better.save_best(accuracy)
         tf.reset_default_graph()
-
 

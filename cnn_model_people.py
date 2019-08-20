@@ -2,7 +2,7 @@ import tensorflow as tf
 import datetime
 from tensorflow.examples.tutorials.mnist import input_data
 import numpy as np
-import import_data
+import import_data_people
 import math
 from tqdm import tqdm
 
@@ -73,14 +73,14 @@ class model_cnn(object):
 
 class run_main():
     def __init__(self):
-        sign_handle = import_data.dealsign()
+        sign_handle = import_data_people.dealsign()
         trainData,self.trainFlag,testData,self.testFlag = sign_handle.readFile()
         self.image_size = 15
         self.channal = 16
         self.num_classes = 5
         self.max_gradient_norm = 10
         self.learning_rate = 5e-4
-        self.batch_size = 16
+        self.batch_size = 32
         self.trainData = self.two_dimension_graph(trainData)
         self.testData = self.two_dimension_graph(testData)
         self.cnn = model_cnn(self.image_size,self.channal, self.num_classes, self.learning_rate,self.max_gradient_norm)
@@ -229,7 +229,7 @@ if __name__ == "__main__":
     for i in range(1):
         print('the time:'+str(i+1))
         ram_better = run_main()
-        ram_better.train(40) 
+        ram_better.train(25) 
         accuracy = ram_better.predict()
         if accuracy >0.5:
             ram_better.save_best(accuracy)

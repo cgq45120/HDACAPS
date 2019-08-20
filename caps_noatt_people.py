@@ -3,7 +3,7 @@ import numpy as np
 import os
 from tensorflow.examples.tutorials.mnist import input_data
 from tqdm import tqdm
-import import_data
+import import_data_people
 import math
 # %matplotlib inline
 # %config InlineBackend.figure_format = 'svg' #高画质图
@@ -112,7 +112,7 @@ class Capsnet():
 
 class run_main():
     def __init__(self):
-        sign_handle = import_data.dealsign()
+        sign_handle = import_data_people.dealsign()
         trainData,self.trainFlag,testData,self.testFlag = sign_handle.readFile()
         self.image_size = 15
         self.channal = 16

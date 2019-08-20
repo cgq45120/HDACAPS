@@ -175,6 +175,9 @@ class run_main():
         output_s = 1/(1+np.exp(-single_feature))
         return output_s
 
+    def defnum(self,time_num):
+        self.time_num = time_num
+
     def train(self,iteration):
         seed = 3
         m = self.trainData.shape[0]
@@ -200,18 +203,36 @@ class run_main():
                 print('step {}:loss = {:3.10f}'.format(step,epoch_cost))
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
+            if step>=25:
+                accuracy=self.predict()
+                if accuracy>0.78:
+                    self.save_best(accuracy)
         self.save()
-        self.save_epoch_loss()
     
-    def save_epoch_loss(self):
+    def save_best(self,accuracy):
+        # correct_num = 0
+        # correct_num_sum = np.sum(self.correct_action>=110)
+        # if correct_num_sum == 5:
+        #     correct_num = 1
+        #save best
+        saver = tf.train.Saver(max_to_keep = 5)
+        saver.save(self.sess,'saver_caps_best/saver'+str(self.time_num)+'_caps_'+str(accuracy)+'/muscle.ckpt')
+        #saver correct
+        m = self.correct_action.shape[0]
+        with open('saver_caps_best/saver'+str(self.time_num)+'_caps_'+str(accuracy)+'/correct.txt','w') as f:
+            for i in range(m):
+                f.write(str(self.correct_action[i]))
+                f.write('\n')
+            f.write(str(self.correct))
+        #saver epoch_loss
         m = self.record_epoch_loss.shape[0]
-        with open('saver_caps/epoch_loss.txt','w') as f:
+        with open('saver_caps_best/saver'+str(self.time_num)+'_caps_'+str(accuracy)+'/epoch_loss.txt','w') as f:
             for i in range(m):
                 f.write(str(self.record_epoch_loss[i]))
                 f.write('\n')
-
+        #saver loss
         m = self.record_loss.shape[0]
-        with open('saver_caps/loss.txt','w') as f:
+        with open('saver_caps_best/saver'+str(self.time_num)+'_caps_'+str(accuracy)+'/loss.txt','w') as f:
             for i in range(m):
                 f.write(str(self.record_loss[i]))
                 f.write('\n')
@@ -220,43 +241,27 @@ class run_main():
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
         action_batch = 195*6
-        correct = 0
-        correct_action = np.zeros(self.num_classes)
+        self.correct = 0
+        self.correct_action = np.zeros(self.num_classes)
         j = 0
         for i in range(num):
             datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
             answer = self.sess.run(self.capsnet_model.v_length,feed_dict={self.capsnet_model.image: datafortest})
             prediction = np.argmax(np.squeeze(answer),axis=1)
             predict_transform = (prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0
-            correct += np.sum(predict_transform)
+            self.correct += np.sum(predict_transform)
             if action_batch*(j+1)>i*self.batch_size and action_batch*(j+1)<(i+1)*self.batch_size:
                 interval = action_batch*(j+1) - i*self.batch_size
-                correct_action[j] += np.sum(predict_transform[:interval])
+                self.correct_action[j] += np.sum(predict_transform[:interval])
                 j = j+1
-                correct_action[j] += np.sum(predict_transform[interval:])
+                self.correct_action[j] += np.sum(predict_transform[interval:])
             else:
-                correct_action[j] += np.sum(predict_transform)  
-        print(correct_action)
-        print(correct)
-        accuracy = correct/(self.batch_size*num)
+                self.correct_action[j] += np.sum(predict_transform)  
+        print(self.correct_action)
+        print(self.correct)
+        accuracy = self.correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
-        with open('saver_caps/correct.txt','w') as f:
-            for i in range(5):
-                f.write(str(correct_action[i]))
-                f.write('\n')
-    # def predict(self):
-    #     m = self.testData.shape[0]
-    #     num = int(m/self.batch_size)
-    #     correct = 0
-    #     for i in range(num):
-    #         datafortest = self.testData[i*self.batch_size:(i+1)*self.batch_size,:].reshape((-1,self.image_size,self.image_size,self.channal))
-    #         answer = self.sess.run(self.capsnet_model.v_length,feed_dict={self.capsnet_model.image: datafortest})
-    #         prediction = np.argmax(np.squeeze(answer),axis=1)
-    #         correct += np.sum((prediction.reshape((-1,1)) == self.testFlag[i*self.batch_size:(i+1)*self.batch_size,:])+0)
-    #     print(correct)
-    #     accuracy = correct/(self.batch_size*num)
-    #     print('test accuracy = {:3.6f}'.format(accuracy))
-
+        return accuracy
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData
@@ -285,7 +290,15 @@ class run_main():
         saver = tf.train.Saver()
         saver.restore(self.sess,'saver_caps/muscle.ckpt')
 
+
+        
 if __name__ == "__main__":
-    ram_better = run_main()
-    ram_better.train(25) 
-    ram_better.predict()
+     for i in range(10):
+        print('the time:'+str(i+1))
+        ram_better = run_main()
+        ram_better.defnum(i)
+        ram_better.train(40) 
+        accuracy = ram_better.predict()
+        if accuracy >0.75:
+            ram_better.save_best(accuracy)
+        tf.reset_default_graph()

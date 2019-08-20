@@ -239,6 +239,7 @@ class run_main():
         print(correct_action)
         print(correct)
         accuracy = correct/(self.batch_size*num)
+        print(str(self.batch_size*num))
         print('test accuracy = {:3.6f}'.format(accuracy))
         with open('saver_caps/correct.txt','w') as f:
             for i in range(5):
@@ -288,5 +289,5 @@ class run_main():
 
 if __name__ == "__main__":
     ram_better = run_main()
-    ram_better.train(40) 
+    ram_better.train(1) 
     ram_better.predict()

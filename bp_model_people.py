@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 import math
-import import_data
+import import_data_people
 from tqdm import tqdm
 
 class AnnModel():
@@ -48,7 +48,7 @@ class AnnModel():
 
 class run_main():
     def __init__(self):
-        sign_handle = import_data.dealsign()
+        sign_handle = import_data_people.dealsign()
         self.trainData,self.trainFlag,self.testData,self.testFlag = sign_handle.readFile()
         self.image_size = 224
         self.num_classes = 5

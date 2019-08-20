@@ -2,43 +2,9 @@ import tensorflow as tf
 import datetime
 from tensorflow.examples.tutorials.mnist import input_data
 import numpy as np
+import import_data
 import math
 from tqdm import tqdm
-import scipy.io
-import os
-
-def LoadData():
-    X_train_orig = np.zeros((195*15,300,16,1))   #44850
-    X_test_orig = np.zeros((1,195*15),dtype=int)
-    Y_train_orig = np.zeros((195*5,300,16,1))   #5850
-    Y_test_orig = np.zeros((1,195*5),dtype=int)
-    path = '../all_data_wrist/'
-    m = 0
-    n = 0
-    for files in os.listdir(path):
-        if int(files[10]) <= 4:
-            EMG = scipy.io.loadmat(path + files)
-            data = EMG['data']
-            for i in range(195):
-                need_to_normal = data[i*50:i*50+300, :]
-                normal_data = (need_to_normal-need_to_normal.min(0))/(need_to_normal.max(0)-need_to_normal.min(0))
-                X_train_orig[m * 195 + i, :, :, 0] = normal_data
-                X_test_orig[0, m * 195 + i] = int(files[6:7])
-            m = m + 1
-        elif int(files[10]) <= 6:
-            EMG = scipy.io.loadmat(path + files)
-            data = EMG['data']
-            for i in range(195):
-                need_to_normal = data[i*50:i*50+300, :]
-                normal_data = (need_to_normal-need_to_normal.min(0))/(need_to_normal.max(0)-need_to_normal.min(0))
-                Y_train_orig[n * 195 + i, :, :, 0] = normal_data
-                Y_test_orig[0, n * 195 + i] = int(files[6:7])
-            n = n + 1
-    Y_test_orig = Y_test_orig-1
-    Y_test_orig = Y_test_orig.reshape(-1,1)
-    X_test_orig = X_test_orig-1
-    X_test_orig = X_test_orig.reshape(-1,1)
-    return X_train_orig,X_test_orig,Y_train_orig,Y_test_orig
 
 def weight_variable(shape):#权重正态分布初始化
     initial=tf.truncated_normal(shape,stddev=0.1)
@@ -56,40 +22,40 @@ class model_cnn(object):
         self.keep_prob = tf.placeholder(tf.float32)
         self.learning_rate = learning_rate
         self.global_step = tf.Variable(0, trainable=False)
-        self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step,200,0.97,staircase=True),1e-7)
+        self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step,100,0.97,staircase=True),1e-7)
         self.m_plus = 0.9
         self.m_minus = 0.1
         self.lambda_val = 0.5
         label_onehot = tf.reshape(tf.one_hot(self.label_input,depth=num_classes,dtype = tf.float32),(-1,num_classes))
 
 
-        #first conv2d 150*8*32
-        self.W_first = weight_variable([5,5,1,32]) 
-        self.b_first = bias_variable([32])
+        #first conv2d 7*8*64
+        self.W_first = weight_variable([5,5,1,64]) 
+        self.b_first = bias_variable([64])
         first_out = tf.nn.relu(tf.nn.conv2d(self.image_input,self.W_first,strides=[1,1,1,1], padding='SAME')+self.b_first)
         first_out_pool = tf.nn.max_pool(first_out, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
 
-        #second conv2d 75*4*64
-        self.W_second = weight_variable([3,3,32,64]) 
-        self.b_second = bias_variable([64])
+        #second conv2d 4*4*128
+        self.W_second = weight_variable([3,3,64,128]) 
+        self.b_second = bias_variable([128])
         second_out = tf.nn.relu(tf.nn.conv2d(first_out_pool,self.W_second,strides=[1,1,1,1], padding='SAME')+self.b_second)
         second_out_pool = tf.nn.max_pool(second_out, ksize=[1,2,2,1], strides=[1,2,2,1], padding='SAME')
-
+    
         # 全连接
-        self.W_fc1 = weight_variable([75*4*64, 1024])
-        self.b_fc1 = bias_variable([1024])
-        h_pool2_flat = tf.reshape(second_out_pool, [-1, 75*4*64])
+        self.W_fc1 = weight_variable([4*4*128, 512])
+        self.b_fc1 = bias_variable([512])
+        h_pool2_flat = tf.reshape(second_out_pool, [-1, 4*4*128])
         h_fc1 = tf.nn.relu(tf.matmul(h_pool2_flat, self.W_fc1) + self.b_fc1)
         h_fc1_drop = tf.nn.dropout(h_fc1, self.keep_prob)   
 
         # out
-        self.W_fc2 = weight_variable([1024, num_classes])
+        self.W_fc2 = weight_variable([512, num_classes])
         self.b_fc2 = bias_variable([num_classes])
         self.output_logit = tf.add(tf.matmul(h_fc1_drop, self.W_fc2) ,self.b_fc2)
 
         #loss 1
-        # self.out_predict = tf.nn.softmax(self.output_logit)
-        # self.cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = self.output_logit, labels = label_onehot))
+        # self.out_predict = tf.nn.softmax(output_logit)
+        # self.cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = output_logit, labels = label_onehot))
 
         #loss 2
         self.out_predict = tf.nn.softmax(self.output_logit)
@@ -106,8 +72,9 @@ class model_cnn(object):
 
 class run_main():
     def __init__(self):
-        self.trainData,self.trainFlag,self.testData,self.testFlag = LoadData()
-        self.image_size = 300
+        sign_handle = import_data.dealsign()
+        self.trainData,self.trainFlag,self.testData,self.testFlag = sign_handle.readFile()
+        self.image_size = 14
         self.channal = 16
         self.num_classes = 5
         self.max_gradient_norm = 10
@@ -116,6 +83,7 @@ class run_main():
         self.cnn = model_cnn(self.image_size,self.channal, self.num_classes, self.learning_rate,self.max_gradient_norm)
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=False))
         self.sess.run(tf.global_variables_initializer())
+
 
     def train(self,iteration):
         seed = 3
@@ -142,7 +110,7 @@ class run_main():
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
         self.save()
-
+        
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
@@ -176,29 +144,29 @@ class run_main():
             correct_num = 1
         #save best
         saver = tf.train.Saver(max_to_keep = 5)
-        saver.save(self.sess,'saver_cnn_no2d_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/muscle.ckpt')
+        saver.save(self.sess,'saver_cnn_featn2d_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/muscle.ckpt')
         #saver correct
         m = self.correct_action.shape[0]
-        with open('saver_cnn_no2d_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/correct.txt','w') as f:
+        with open('saver_cnn_featn2d_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/correct.txt','w') as f:
             for i in range(m):
                 f.write(str(self.correct_action[i]))
                 f.write('\n')
             f.write(str(self.correct))
         #saver epoch_loss
         m = self.record_epoch_loss.shape[0]
-        with open('saver_cnn_no2d_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/epoch_loss.txt','w') as f:
+        with open('saver_cnn_featn2d_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/epoch_loss.txt','w') as f:
             for i in range(m):
                 f.write(str(self.record_epoch_loss[i]))
                 f.write('\n')
         #saver loss
         m = self.record_loss.shape[0]
-        with open('saver_cnn_no2d_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/loss.txt','w') as f:
+        with open('saver_cnn_featn2d_best/saver'+str(correct_num)+'_cnn_'+str(accuracy)+'/loss.txt','w') as f:
             for i in range(m):
                 f.write(str(self.record_loss[i]))
                 f.write('\n')
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
-        X = self.trainData.reshape(-1,self.image_size*self.channal)
+        X = self.trainData
         Y = self.trainFlag
         m = X.shape[0]                  # number of training examples
         mini_batches = []
@@ -218,20 +186,18 @@ class run_main():
 
     def save(self):
         saver = tf.train.Saver(max_to_keep = 5)
-        saver.save(self.sess,'saver_cnn_no2d/muscle.ckpt')
+        saver.save(self.sess,'saver_cnn_featn2d/muscle.ckpt')
 
     def load(self):
         saver = tf.train.Saver()
-        saver.restore(self.sess,'saver_cnn_no2d/muscle.ckpt')
+        saver.restore(self.sess,'saver_cnn_featn2d/muscle.ckpt')
 
 if __name__ == "__main__":
-    for i in range(1):
+    for i in range(5):
         print('the time:'+str(i+1))
         ram_better = run_main()
-        ram_better.train(25) 
+        ram_better.train(40) 
         accuracy = ram_better.predict()
-        if accuracy >0.5:
+        if accuracy >0.7:
             ram_better.save_best(accuracy)
         tf.reset_default_graph()
-
-
