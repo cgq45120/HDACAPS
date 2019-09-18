@@ -111,15 +111,15 @@ class Capsnet():
         self.image = tf.placeholder(tf.float32, [self.batch_size, image_size, image_size, channal])
         self.label = tf.placeholder(tf.int64, [self.batch_size, 1])
         label_onehot = tf.one_hot(self.label, depth=num_classes, axis=1, dtype=tf.float32)
-        with tf.variable_scope('Conv1_layer'):
-            self.conv1 = tf.contrib.layers.conv2d(self.image, num_outputs=self.num_outputs_layer_conv2d1, kernel_size=5, stride=1, padding='VALID')
-        attention_shape = self.conv1.get_shape()
+        attention_shape = self.image.get_shape()
         with tf.variable_scope('soft_attention'):
             self.spatialAtt = spatial_attention(attention_shape)
-            self.attention1 = self.spatialAtt(self.conv1)
+            self.attention1 = self.spatialAtt(self.image)
+        with tf.variable_scope('Conv1_layer'):
+            self.conv1 = tf.contrib.layers.conv2d(self.attention1, num_outputs=self.num_outputs_layer_conv2d1, kernel_size=5, stride=1, padding='VALID')
         with tf.variable_scope('PrimaryCaps_layer'):
             primaryCaps = CapsLayer(self.batch_size, self.epsilon, self.iter_routing, num_outputs=self.num_outputs_layer_PrimaryCaps, vec_len=self.num_dims_layer_PrimaryCaps, with_routing=False, layer_type='CONV')
-            self.caps1 = primaryCaps(self.attention1, kernel_size=5, stride=1)
+            self.caps1 = primaryCaps(self.conv1, kernel_size=5, stride=1)
         with tf.variable_scope('DigitCaps_layer'):
             digitCaps = CapsLayer(self.batch_size, self.epsilon, self.iter_routing, num_outputs=self.num_outputs_decode, vec_len=self.num_dims_decode, with_routing=True, layer_type='FC')
             self.caps2 = digitCaps(self.caps1)
@@ -170,6 +170,7 @@ class run_main():
         for i in range(feature.shape[0]):
             for j in range(feature.shape[1]):
                 single_use = np.hstack((feature[i, j, :], 1)).reshape(-1, self.image_size)
+                # single_graph = 0.5*np.sqrt(single_use.T*single_use)
                 single_graph = self.sigmoid(0.5*np.sqrt(single_use.T*single_use))
                 feature_graph[i, :, :, j] = single_graph
         feature_graph = feature_graph.reshape((feature.shape[0], -1))
@@ -214,23 +215,23 @@ class run_main():
             correct_num = 1
         # save best
         saver = tf.train.Saver(max_to_keep=5)
-        saver.save(self.sess, 'saver_caps_best/saver' +str(correct_num)+'_caps_'+str(accuracy)+'/muscle.ckpt')
+        saver.save(self.sess, 'saver_caps_location_best/saver' +str(correct_num)+'_caps_'+str(accuracy)+'/muscle.ckpt')
         # saver correct
         m = self.correct_action.shape[0]
-        with open('saver_caps_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/correct.txt', 'w') as f:
+        with open('saver_caps_location_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/correct.txt', 'w') as f:
             for i in range(m):
                 f.write(str(self.correct_action[i]))
                 f.write('\n')
             f.write(str(self.correct))
         # saver epoch_loss
         m = self.record_epoch_loss.shape[0]
-        with open('saver_caps_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/epoch_loss.txt', 'w') as f:
+        with open('saver_caps_location_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/epoch_loss.txt', 'w') as f:
             for i in range(m):
                 f.write(str(self.record_epoch_loss[i]))
                 f.write('\n')
         # saver loss
         m = self.record_loss.shape[0]
-        with open('saver_caps_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/loss.txt', 'w') as f:
+        with open('saver_caps_location_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/loss.txt', 'w') as f:
             for i in range(m):
                 f.write(str(self.record_loss[i]))
                 f.write('\n')
