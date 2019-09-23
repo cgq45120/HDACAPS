@@ -44,7 +44,7 @@ if __name__ == "__main__":
 
     for i in range(10):
         print('caps_se_model the time:'+str(i+1))
-        caps_se_model = caps_se_model.RunMain(data_class)
+        caps_se_model = caps_se.RunMain(data_class)
         caps_se_model.train(iteration) 
         accuracy = caps_se_model.predict()
         caps_se_model.save_best(accuracy)
