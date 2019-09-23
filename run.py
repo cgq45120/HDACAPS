@@ -1,4 +1,5 @@
 import numpy as np
+import time
 import tensorflow as tf
 import math
 import import_data
@@ -25,6 +26,7 @@ if __name__ == "__main__":
         accuracy = TDACAPS.predict()
         TDACAPS.save_best(accuracy)
         tf.reset_default_graph()
+    print(time.ctime())
 
     for i in range(10):
         print('caps_cbam_model the time:'+str(i+1))
@@ -33,6 +35,7 @@ if __name__ == "__main__":
         accuracy = caps_se_model.predict()
         caps_se_model.save_best(accuracy)
         tf.reset_default_graph()
+    print(time.ctime())
 
     for i in range(10):
         print('caps_sae_model the time:'+str(i+1))
@@ -41,6 +44,7 @@ if __name__ == "__main__":
         accuracy = caps_sae_model.predict()
         caps_sae_model.save_best(accuracy)
         tf.reset_default_graph()
+    print(time.ctime())
 
     for i in range(10):
         print('caps_se_model the time:'+str(i+1))
@@ -49,3 +53,4 @@ if __name__ == "__main__":
         accuracy = caps_se_model.predict()
         caps_se_model.save_best(accuracy)
         tf.reset_default_graph()
+    print(time.ctime())
