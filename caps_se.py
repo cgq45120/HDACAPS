@@ -39,7 +39,7 @@ class CapsLayer(object):
 
     def routing(self, input, b_IJ):
         input_shape = input.get_shape()
-        W = tf.get_variable('Weight', shape=(1, input_shape[1], self.num_outputs*self.vec_len, input_shape[3],input_shape[4]), dtype=tf.float32, initializer=tf.random_normal_initializer(stddev=0.01))
+        W = tf.get_variable('Weight', shape=(1, input_shape[1], self.num_outputs*self.vec_len, input_shape[3], input_shape[4]), dtype=tf.float32, initializer=tf.random_normal_initializer(stddev=0.01))
         # W = tf.get_variable('Weight', shape=(1, input_shape[1], input_shape[2], input_shape[3], self.vec_len), dtype=tf.float32,initializer=tf.random_normal_initializer(stddev=0.01))
         input = tf.tile(input, [1, 1, self.num_outputs * self.vec_len, 1, 1])
         u_hat = tf.reduce_sum(W * input, axis=3, keepdims=True)
@@ -69,27 +69,18 @@ class CapsLayer(object):
         return(vec_squashed)
 
 
-class spatial_attention():
+class se_attention():
     def __init__(self, input_shape):
-        self.w_tanh = self.weight_variable((1, input_shape[1].value, input_shape[2].value, input_shape[3].value))
-        self.b_tanh = self.bias_variable((1, input_shape[1].value, input_shape[2].value, 1))
+        self.shape = [input_shape[0].value,input_shape[1].value,input_shape[2].value,input_shape[3].value]
 
     def __call__(self, input):
-        fc_first = tf.nn.tanh(tf.reduce_sum(tf.multiply(input, self.w_tanh), axis=3, keep_dims=True) + self.b_tanh)
-        spatial_attention_max = tf.nn.max_pool(fc_first, ksize=[1, 2, 2, 1], strides=[1, 1, 1, 1], padding='SAME')
-        spatial_attention_mean = tf.nn.avg_pool(fc_first, ksize=[1, 2, 2, 1], strides=[1, 1, 1, 1], padding='SAME')
-        spatial_attention_concat = tf.concat([spatial_attention_max, spatial_attention_mean], axis=3)
-        self.attention = tf.contrib.layers.conv2d(spatial_attention_concat, num_outputs=1, kernel_size=5, stride=1, padding='SAME', activation_fn=tf.nn.sigmoid)
+        attention_mean = tf.nn.avg_pool(input, ksize=[1, self.shape[1], self.shape[2], 1], strides=[1, 1, 1, 1], padding='VALID')
+        attention_mean_reshape = tf.reshape(attention_mean,[self.shape[0], 1, self.shape[3]])
+        fc_first = tf.layers.dense(inputs = attention_mean_reshape, units = self.shape[3]/16, activation = tf.nn.relu)
+        squeeze_attention = tf.layers.dense(inputs = fc_first, units = self.shape[3], activation = tf.nn.sigmoid)
+        self.attention = tf.reshape(squeeze_attention,shape = [self.shape[0],1,1,self.shape[3]])
         output = tf.multiply(input, self.attention)
         return output
-
-    def weight_variable(self, shape):
-        initial = tf.truncated_normal(shape=shape, stddev=0.01)  # define weight
-        return tf.Variable(initial)
-
-    def bias_variable(self, shape):
-        initial = tf.constant(0.01, shape=shape)
-        return tf.Variable(initial)
 
 
 class Capsnet():
@@ -111,15 +102,15 @@ class Capsnet():
         self.image = tf.placeholder(tf.float32, [self.batch_size, image_size, image_size, channal])
         self.label = tf.placeholder(tf.int64, [self.batch_size, 1])
         label_onehot = tf.one_hot(self.label, depth=num_classes, axis=1, dtype=tf.float32)
-        attention_shape = self.image.get_shape()
-        with tf.variable_scope('soft_attention'):
-            self.spatialAtt = spatial_attention(attention_shape)
-            self.attention1 = self.spatialAtt(self.image)
         with tf.variable_scope('Conv1_layer'):
-            self.conv1 = tf.contrib.layers.conv2d(self.attention1, num_outputs=self.num_outputs_layer_conv2d1, kernel_size=5, stride=1, padding='VALID')
+            self.conv1 = tf.contrib.layers.conv2d(self.image, num_outputs=self.num_outputs_layer_conv2d1, kernel_size=5, stride=1, padding='VALID')
+        attention_shape = self.conv1.get_shape()
+        with tf.variable_scope('soft_attention'):
+            self.spatialAtt = se_attention(attention_shape)
+            self.attention1 = self.spatialAtt(self.conv1)
         with tf.variable_scope('PrimaryCaps_layer'):
             primaryCaps = CapsLayer(self.batch_size, self.epsilon, self.iter_routing, num_outputs=self.num_outputs_layer_PrimaryCaps, vec_len=self.num_dims_layer_PrimaryCaps, with_routing=False, layer_type='CONV')
-            self.caps1 = primaryCaps(self.conv1, kernel_size=5, stride=1)
+            self.caps1 = primaryCaps(self.attention1, kernel_size=5, stride=1)
         with tf.variable_scope('DigitCaps_layer'):
             digitCaps = CapsLayer(self.batch_size, self.epsilon, self.iter_routing, num_outputs=self.num_outputs_decode, vec_len=self.num_dims_decode, with_routing=True, layer_type='FC')
             self.caps2 = digitCaps(self.caps1)
@@ -204,7 +195,7 @@ class run_main():
                 print('step {}:loss = {:3.10f}'.format(step, epoch_cost))
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
-            accuracy = self.predict()
+            # accuracy = self.predict()
         self.save()
 
     def save_best(self, accuracy):
@@ -214,23 +205,23 @@ class run_main():
             correct_num = 1
         # save best
         saver = tf.train.Saver(max_to_keep=5)
-        saver.save(self.sess, 'saver_caps_location_best/saver' +str(correct_num)+'_caps_'+str(accuracy)+'/muscle.ckpt')
+        saver.save(self.sess, 'saver_caps_se/saver' +str(correct_num)+'_caps_'+str(accuracy)+'/muscle.ckpt')
         # saver correct
         m = self.correct_action.shape[0]
-        with open('saver_caps_location_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/correct.txt', 'w') as f:
+        with open('saver_caps_se/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/correct.txt', 'w') as f:
             for i in range(m):
                 f.write(str(self.correct_action[i]))
                 f.write('\n')
             f.write(str(self.correct))
         # saver epoch_loss
         m = self.record_epoch_loss.shape[0]
-        with open('saver_caps_location_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/epoch_loss.txt', 'w') as f:
+        with open('saver_caps_se/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/epoch_loss.txt', 'w') as f:
             for i in range(m):
                 f.write(str(self.record_epoch_loss[i]))
                 f.write('\n')
         # saver loss
         m = self.record_loss.shape[0]
-        with open('saver_caps_location_best/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/loss.txt', 'w') as f:
+        with open('saver_caps_se/saver'+str(correct_num)+'_caps_'+str(accuracy)+'/loss.txt', 'w') as f:
             for i in range(m):
                 f.write(str(self.record_loss[i]))
                 f.write('\n')
@@ -295,6 +286,5 @@ if __name__ == "__main__":
         ram_better = run_main()
         ram_better.train(40)
         accuracy = ram_better.predict()
-        if accuracy > 0.83:
-            ram_better.save_best(accuracy)
+        ram_better.save_best(accuracy)
         tf.reset_default_graph()

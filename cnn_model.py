@@ -15,7 +15,7 @@ def bias_variable(shape):#偏置量初始化
     initial=tf.constant(0.0,shape=shape)#value=0.1,shape是生成的维度
     return tf.Variable(initial)
 
-class model_cnn(object):
+class CnnModel(object):
     def __init__(self, image_size,channal, num_classes,learning_rate,max_gradient_norm):
         self.image_input = tf.placeholder(tf.float32, [None,image_size,image_size,channal])
         self.label_input = tf.placeholder(tf.int32, [None,1])
@@ -70,19 +70,20 @@ class model_cnn(object):
         self.train_op = tf.train.AdamOptimizer(self.learning_rate).apply_gradients(zip(clipped_gradients, params), global_step = self.global_step)   
 
 
-class run_main():
-    def __init__(self):
-        sign_handle = import_data.dealsign()
-        trainData,self.trainFlag,testData,self.testFlag = sign_handle.readFile()
+class RunMain():
+    def __init__(self,data_class):
+        sign_handle = import_data.DealSign()
+        self.data_class = data_class
+        trainData,self.trainFlag,testData,self.testFlag = sign_handle.readFile(self.data_class)
         self.image_size = 15
         self.channal = 16
         self.num_classes = 5
         self.max_gradient_norm = 10
         self.learning_rate = 5e-4
-        self.batch_size = 16
+        self.batch_size = 16 if self.data_class == "person" else 32
         self.trainData = self.two_dimension_graph(trainData)
         self.testData = self.two_dimension_graph(testData)
-        self.cnn = model_cnn(self.image_size,self.channal, self.num_classes, self.learning_rate,self.max_gradient_norm)
+        self.cnn = CnnModel(self.image_size,self.channal, self.num_classes, self.learning_rate,self.max_gradient_norm)
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=False))
         self.sess.run(tf.global_variables_initializer())
 
@@ -126,12 +127,11 @@ class run_main():
                 print('step {}: learing_rate={:3.10f}\t loss = {:3.10f}\t '.format(step, learning_rate_now,epoch_cost))
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
-        self.save()
-        
+
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
-        action_batch = 195
+        action_batch = 195 if self.data_class == "person" else 195*6
         self.correct = 0
         self.correct_action = np.zeros(self.num_classes)
         j = 0
@@ -201,20 +201,18 @@ class run_main():
             mini_batches.append(mini_batch)
         return mini_batches
 
-    def save(self):
-        saver = tf.train.Saver(max_to_keep = 5)
-        saver.save(self.sess,'saver_cnn/muscle.ckpt')
-
     def load(self):
         saver = tf.train.Saver()
         saver.restore(self.sess,'saver_cnn/muscle.ckpt')
 
 if __name__ == "__main__":
-    for i in range(5):
-        print('the time:'+str(i+1))
-        ram_better = run_main()
-        ram_better.train(40) 
-        accuracy = ram_better.predict()
-        if accuracy >0.7:
-            ram_better.save_best(accuracy)
+    data_class = "person"
+    # data_class = "people"
+    iteration = 40 if data_class == "person" else 30
+    for i in range(10):
+        print('cnn_model the time:'+str(i+1))
+        cnn_model = RunMain(data_class)
+        cnn_model.train(iteration) 
+        accuracy = cnn_model.predict()
+        cnn_model.save_best(accuracy)
         tf.reset_default_graph()

@@ -2,7 +2,7 @@ import scipy.io
 import os
 import numpy as np
 import math
-class import_mat_data():
+class ImportMatData():
     def __init__(self):
         self.path = '../all_data_wrist_people/'
         self.length_windows = 300
@@ -34,7 +34,7 @@ class import_mat_data():
         test_flag = test_flag.astype('int')
         return train_orig,train_flag,test_orig,test_flag
 
-class dealsign(object):
+class DealSign(object):
     def __init__(self):
         self.length_windows = 300
         self.number_data = 195
@@ -104,7 +104,7 @@ class dealsign(object):
         return sumMFMD
 
     def readFile(self):
-        data_import = import_mat_data()
+        data_import = ImportMatData()
         traindata,trainFlag,testdata,testFlag = data_import.Loaddata()
         trainData = self.deal(traindata)
         testData = self.deal(testdata)
@@ -141,6 +141,6 @@ class dealsign(object):
         Data = np.array(Data).reshape((-1,self.feature*self.channal))
         return Data
 
-if __name__ == "__main__":
-    data_import = dealsign()
-    data = data_import.readFile()
+# if __name__ == "__main__":
+#     data_import = DealSign()
+#     data = data_import.readFile()

@@ -2,39 +2,63 @@ import scipy.io
 import os
 import numpy as np
 import math
-class import_mat_data():
+class ImportMatData():
     def __init__(self):
-        self.path = '../all_data_wrist/'
         self.length_windows = 300
         self.number_data = 195
         self.interval = 50
         self.channal = 16
 
-    def Loaddata(self):
-        train_orig = np.zeros((self.number_data*15,self.length_windows,self.channal))
-        train_flag = np.zeros((self.number_data*15,1))
-        test_orig = np.zeros((self.number_data*5,self.length_windows,self.channal))
-        test_flag = np.zeros((self.number_data*5,1))
-        m_train = 0
-        m_test = 0
-        for files in os.listdir(self.path):
-            EMG = scipy.io.loadmat(self.path + files)
-            data = EMG['data'][:,:self.channal]
-            if int(files[10]) <= 4:
-                for i in range(self.number_data):
-                    train_orig[m_train * self.number_data + i, :, :] = data[i*self.interval:i*self.interval+self.length_windows,:]
-                train_flag[m_train * self.number_data : ( m_train + 1 ) * self.number_data] = np.tile(int(files[6]),(self.number_data,1))-1
-                m_train += 1
-            elif int(files[10]) <= 6:
-                for i in range(self.number_data):
-                    test_orig[m_test * self.number_data + i, :, :] = data[i*self.interval:i*self.interval+self.length_windows,:]
-                test_flag[m_test * self.number_data : ( m_test + 1 ) * self.number_data] = np.tile(int(files[6]),(self.number_data,1))-1
-                m_test += 1
-        train_flag = train_flag.astype('int')
-        test_flag = test_flag.astype('int')
-        return train_orig,train_flag,test_orig,test_flag
-
-class dealsign(object):
+    def load_data(self,data_class):
+        if data_class == "person":
+            self.path = '../all_data_wrist/'
+            train_orig = np.zeros((self.number_data*15,self.length_windows,self.channal))
+            train_flag = np.zeros((self.number_data*15,1))
+            test_orig = np.zeros((self.number_data*5,self.length_windows,self.channal))
+            test_flag = np.zeros((self.number_data*5,1))
+            m_train = 0
+            m_test = 0
+            for files in os.listdir(self.path):
+                EMG = scipy.io.loadmat(self.path + files)
+                data = EMG['data'][:,:self.channal]
+                if int(files[10]) <= 4:
+                    for i in range(self.number_data):
+                        train_orig[m_train * self.number_data + i, :, :] = data[i*self.interval:i*self.interval+self.length_windows,:]
+                    train_flag[m_train * self.number_data : ( m_train + 1 ) * self.number_data] = np.tile(int(files[6]),(self.number_data,1))-1
+                    m_train += 1
+                elif int(files[10]) <= 6:
+                    for i in range(self.number_data):
+                        test_orig[m_test * self.number_data + i, :, :] = data[i*self.interval:i*self.interval+self.length_windows,:]
+                    test_flag[m_test * self.number_data : ( m_test + 1 ) * self.number_data] = np.tile(int(files[6]),(self.number_data,1))-1
+                    m_test += 1
+            train_flag = train_flag.astype('int')
+            test_flag = test_flag.astype('int')
+            return train_orig,train_flag,test_orig,test_flag
+        elif data_class == "people":
+            self.path = '../all_data_wrist_people/'
+            train_orig = np.zeros((self.number_data*210,self.length_windows,self.channal))
+            train_flag = np.zeros((self.number_data*210,1))
+            test_orig = np.zeros((self.number_data*30,self.length_windows,self.channal))
+            test_flag = np.zeros((self.number_data*30,1))
+            m_train = 0
+            m_test = 0
+            for files in os.listdir(self.path):
+                EMG = scipy.io.loadmat(self.path + files)
+                data = EMG['data'][:,:self.channal]
+                if int(files[2]) <= 7:
+                    for i in range(self.number_data):
+                        train_orig[m_train * self.number_data + i, :, :] = data[i*self.interval:i*self.interval+self.length_windows,:]
+                    train_flag[m_train * self.number_data : ( m_train + 1 ) * self.number_data] = np.tile(int(files[6]),(self.number_data,1))-1
+                    m_train += 1
+                elif int(files[2]) <= 8:
+                    for i in range(self.number_data):
+                        test_orig[m_test * self.number_data + i, :, :] = data[i*self.interval:i*self.interval+self.length_windows,:]
+                    test_flag[m_test * self.number_data : ( m_test + 1 ) * self.number_data] = np.tile(int(files[6]),(self.number_data,1))-1
+                    m_test += 1
+            train_flag = train_flag.astype('int')
+            test_flag = test_flag.astype('int')
+            return train_orig,train_flag,test_orig,test_flag
+class DealSign(object):
     def __init__(self):
         self.length_windows = 300
         self.number_data = 195
@@ -103,19 +127,23 @@ class dealsign(object):
         sumMFMD = np.sum(sign, axis = 0)/2
         return sumMFMD
 
-    def readFile(self):
-        data_import = import_mat_data()
-        traindata,trainFlag,testdata,testFlag = data_import.Loaddata()
+    def readFile(self,data_class):
+        data_import = ImportMatData()
+        traindata,trainFlag,testdata,testFlag = data_import.load_data(data_class)
         trainData = self.deal(traindata)
         testData = self.deal(testdata)
-        trainData,testData = self.onehot(trainData,testData)
+        trainData,testData = self.onehot(trainData,testData,data_class)
         return trainData,trainFlag,testData,testFlag
 
-    def onehot(self,trainData,testData):
+    def onehot(self,trainData,testData,data_class):
         one_hot = np.vstack((trainData, testData))
         one_hot = (one_hot - one_hot.min(0))/(one_hot.max(0) - one_hot.min(0))
-        trainData = one_hot[0:self.number_data*15, :]
-        testData = one_hot[self.number_data*15:, :]
+        if data_class == "person":
+            trainData = one_hot[0:self.number_data*15, :]
+            testData = one_hot[self.number_data*15:, :]
+        elif data_class == "people":
+            trainData = one_hot[0:self.number_data*210, :]
+            testData = one_hot[self.number_data*210:, :]
         return trainData,testData
 
     def deal(self,dataOrigin):
@@ -142,5 +170,5 @@ class dealsign(object):
         return Data
 
 if __name__ == "__main__":
-    data_import = dealsign()
-    data = data_import.readFile()
+    data_import = DealSign()
+    data = data_import.readFile("person")

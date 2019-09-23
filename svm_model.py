@@ -13,7 +13,7 @@ class svmclassify():
         clf.fit(self.trainData,self.trainFlag.reshape(-1,))
         predictTag = clf.predict(self.testData)
         predict_action = (predictTag.reshape(-1,1) == self.testFlag)+0
-        action_batch = 195
+        action_batch = int(self.testFlag.shape[0]/5)
         action_num = np.zeros(5)
         for i in range(5):
             action_num[i] = np.sum(predict_action[i*action_batch:(i+1)*action_batch])
@@ -37,8 +37,10 @@ class svmclassify():
         # print(avg,std)
 
 if __name__ == "__main__":
-    sign_handle = import_data.dealsign()
-    trainData,trainFlag,testData,testFlag = sign_handle.readFile()
+    data_class = "person"
+    # data_class = "people"
+    sign_handle = import_data.DealSign()
+    trainData,trainFlag,testData,testFlag = sign_handle.readFile(data_class)
     print('train and predict')
     svm_model = svmclassify(trainData,trainFlag,testData,testFlag)
     accuracy = svm_model.classify()

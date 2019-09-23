@@ -7,33 +7,61 @@ from tqdm import tqdm
 import scipy.io
 import os
 
-def LoadData():
-    X_train_orig = np.zeros((195*15,300,16,1))   #44850
-    X_test_orig = np.zeros((1,195*15),dtype=int)
-    Y_train_orig = np.zeros((195*5,300,16,1))   #5850
-    Y_test_orig = np.zeros((1,195*5),dtype=int)
-    path = '../all_data_wrist/'
-    m = 0
-    n = 0
-    for files in os.listdir(path):
-        if int(files[10]) <= 4:
-            EMG = scipy.io.loadmat(path + files)
-            data = EMG['data']
-            for i in range(195):
-                need_to_normal = data[i*50:i*50+300, :]
-                normal_data = (need_to_normal-need_to_normal.min(0))/(need_to_normal.max(0)-need_to_normal.min(0))
-                X_train_orig[m * 195 + i, :, :, 0] = normal_data
-                X_test_orig[0, m * 195 + i] = int(files[6:7])
-            m = m + 1
-        elif int(files[10]) <= 6:
-            EMG = scipy.io.loadmat(path + files)
-            data = EMG['data']
-            for i in range(195):
-                need_to_normal = data[i*50:i*50+300, :]
-                normal_data = (need_to_normal-need_to_normal.min(0))/(need_to_normal.max(0)-need_to_normal.min(0))
-                Y_train_orig[n * 195 + i, :, :, 0] = normal_data
-                Y_test_orig[0, n * 195 + i] = int(files[6:7])
-            n = n + 1
+def load_data(data_class):
+    if data_class == "person":
+        path = '../all_data_wrist/'
+        X_train_orig = np.zeros((195*15,300,16,1))   #44850
+        X_test_orig = np.zeros((1,195*15),dtype=int)
+        Y_train_orig = np.zeros((195*5,300,16,1))   #5850
+        Y_test_orig = np.zeros((1,195*5),dtype=int)
+        m = 0
+        n = 0
+        for files in os.listdir(path):
+            if int(files[10]) <= 4:
+                EMG = scipy.io.loadmat(path + files)
+                data = EMG['data']
+                for i in range(195):
+                    need_to_normal = data[i*50:i*50+300, :]
+                    normal_data = (need_to_normal-need_to_normal.min(0))/(need_to_normal.max(0)-need_to_normal.min(0))
+                    X_train_orig[m * 195 + i, :, :, 0] = normal_data
+                    X_test_orig[0, m * 195 + i] = int(files[6:7])
+                m = m + 1
+            elif int(files[10]) <= 6:
+                EMG = scipy.io.loadmat(path + files)
+                data = EMG['data']
+                for i in range(195):
+                    need_to_normal = data[i*50:i*50+300, :]
+                    normal_data = (need_to_normal-need_to_normal.min(0))/(need_to_normal.max(0)-need_to_normal.min(0))
+                    Y_train_orig[n * 195 + i, :, :, 0] = normal_data
+                    Y_test_orig[0, n * 195 + i] = int(files[6:7])
+                n = n + 1
+    elif data_class == "people":
+        X_train_orig = np.zeros((195*210,300,16,1))   #44850
+        X_test_orig = np.zeros((1,195*210),dtype=int)
+        Y_train_orig = np.zeros((195*30,300,16,1))   #5850
+        Y_test_orig = np.zeros((1,195*30),dtype=int)
+        path = '../all_data_wrist_people/'
+        m = 0
+        n = 0
+        for files in os.listdir(path):
+            if int(files[2]) <= 7:
+                EMG = scipy.io.loadmat(path + files)
+                data = EMG['data']
+                for i in range(195):
+                    need_to_normal = data[i*50:i*50+300, :]
+                    normal_data = (need_to_normal-need_to_normal.min(0))/(need_to_normal.max(0)-need_to_normal.min(0))
+                    X_train_orig[m * 195 + i, :, :, 0] = normal_data
+                    X_test_orig[0, m * 195 + i] = int(files[6:7])
+                m = m + 1
+            elif int(files[2]) <= 8:
+                EMG = scipy.io.loadmat(path + files)
+                data = EMG['data']
+                for i in range(195):
+                    need_to_normal = data[i*50:i*50+300, :]
+                    normal_data = (need_to_normal-need_to_normal.min(0))/(need_to_normal.max(0)-need_to_normal.min(0))
+                    Y_train_orig[n * 195 + i, :, :, 0] = normal_data
+                    Y_test_orig[0, n * 195 + i] = int(files[6:7])
+                n = n + 1
     Y_test_orig = Y_test_orig-1
     Y_test_orig = Y_test_orig.reshape(-1,1)
     X_test_orig = X_test_orig-1
@@ -49,7 +77,7 @@ def bias_variable(shape):#偏置量初始化
     initial=tf.constant(0.0,shape=shape)#value=0.1,shape是生成的维度
     return tf.Variable(initial)
 
-class model_cnn(object):
+class CnnModel(object):
     def __init__(self, image_size,channal, num_classes,learning_rate,max_gradient_norm):
         self.image_input = tf.placeholder(tf.float32, [None,image_size,channal,1])
         self.label_input = tf.placeholder(tf.int32, [None,1])
@@ -104,16 +132,17 @@ class model_cnn(object):
         self.train_op = tf.train.AdamOptimizer(self.learning_rate).apply_gradients(zip(clipped_gradients, params), global_step = self.global_step)   
 
 
-class run_main():
-    def __init__(self):
-        self.trainData,self.trainFlag,self.testData,self.testFlag = LoadData()
+class RunMain():
+    def __init__(self,data_class):
+        self.data_class = data_class
+        self.trainData,self.trainFlag,self.testData,self.testFlag = load_data(data_class)
         self.image_size = 300
         self.channal = 16
         self.num_classes = 5
         self.max_gradient_norm = 10
         self.learning_rate = 5e-4
-        self.batch_size = 16
-        self.cnn = model_cnn(self.image_size,self.channal, self.num_classes, self.learning_rate,self.max_gradient_norm)
+        self.batch_size = 16 if self.data_class == "person" else 32
+        self.cnn = CnnModel(self.image_size,self.channal, self.num_classes, self.learning_rate,self.max_gradient_norm)
         self.sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=False))
         self.sess.run(tf.global_variables_initializer())
 
@@ -141,12 +170,12 @@ class run_main():
                 print('step {}: learing_rate={:3.10f}\t loss = {:3.10f}\t '.format(step, learning_rate_now,epoch_cost))
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
-        self.save()
+        # self.save()
 
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
-        action_batch = 195
+        action_batch = 195 if self.data_class == "person" else 195*6
         self.correct = 0
         self.correct_action = np.zeros(self.num_classes)
         j = 0
@@ -225,13 +254,14 @@ class run_main():
         saver.restore(self.sess,'saver_cnn_no2d/muscle.ckpt')
 
 if __name__ == "__main__":
+    data_class = "person"
+    # data_class = "people"
+    iteration = 1 if data_class == "person" else 1
     for i in range(1):
-        print('the time:'+str(i+1))
-        ram_better = run_main()
-        ram_better.train(25) 
-        accuracy = ram_better.predict()
-        if accuracy >0.5:
-            ram_better.save_best(accuracy)
+        print('cnn_no2d_model the time:'+str(i+1))
+        cnn_no2d_model = RunMain(data_class)
+        cnn_no2d_model.train(iteration) 
+        accuracy = cnn_no2d_model.predict()
+        cnn_no2d_model.save_best(accuracy)
         tf.reset_default_graph()
-
 
