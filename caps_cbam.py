@@ -69,7 +69,7 @@ class CapsLayer(object):
         return(vec_squashed)
 
 
-class cbam_attention():
+class CbamAttention():
     def __init__(self, input_shape):
         self.shape = [input_shape[0].value,input_shape[1].value,input_shape[2].value,input_shape[3].value]
         self.units_ratio = 0.5
@@ -117,8 +117,8 @@ class Capsnet():
         with tf.variable_scope('Conv1_layer'):
             self.conv1 = tf.contrib.layers.conv2d(self.image, num_outputs=self.num_outputs_layer_conv2d1, kernel_size=5, stride=1, padding='VALID')
         attention_shape = self.conv1.get_shape()
-        with tf.variable_scope('soft_attention'):
-            self.spatialAtt = cbam_attention(attention_shape)
+        with tf.variable_scope('Soft_attention'):
+            self.spatialAtt = CbamAttention(attention_shape)
             self.attention1 = self.spatialAtt(self.conv1)
         with tf.variable_scope('PrimaryCaps_layer'):
             primaryCaps = CapsLayer(self.batch_size, self.epsilon, self.iter_routing, num_outputs=self.num_outputs_layer_PrimaryCaps, vec_len=self.num_dims_layer_PrimaryCaps, with_routing=False, layer_type='CONV')
@@ -143,14 +143,15 @@ class Capsnet():
         self.train_op = tf.train.AdamOptimizer().minimize(self.total_loss, global_step=self.global_step)
 
 
-class run_main():
-    def __init__(self):
-        sign_handle = import_data.dealsign()
-        trainData, self.trainFlag, testData, self.testFlag = sign_handle.readFile()
+class RunMain():
+    def __init__(self,data_class):
+        self.data_class = data_class
+        sign_handle = import_data.DealSign()
+        trainData, self.trainFlag, testData, self.testFlag = sign_handle.readFile(self.data_class)
         self.image_size = 15
         self.channal = 16
         self.num_classes = 5
-        self.batch_size = 16
+        self.batch_size = 16 if self.data_class == "person" else 32
         self.lambda_val = 0.5
         self.m_plus = 0.9
         self.m_minus = 0.1
@@ -241,7 +242,7 @@ class run_main():
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
-        action_batch = 195
+        action_batch = int(self.testFlag.shape[0]/5)
         self.correct = 0
         self.correct_action = np.zeros(self.num_classes)
         j = 0
@@ -293,10 +294,13 @@ class run_main():
 
 
 if __name__ == "__main__":
-    for i in range(1):
-        print('the time:'+str(i+1))
-        ram_better = run_main()
-        ram_better.train(40)
-        accuracy = ram_better.predict()
-        ram_better.save_best(accuracy)
+    data_class = "person"
+    # data_class = "people"
+    iteration = 40 if data_class == "person" else 30
+    for i in range(10):
+        print('caps_cbam_model the time:'+str(i+1))
+        caps_se_model = RunMain(data_class)
+        caps_se_model.train(iteration) 
+        accuracy = caps_se_model.predict()
+        caps_se_model.save_best(accuracy)
         tf.reset_default_graph()

@@ -114,7 +114,7 @@ class RunMain():
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
-        action_batch = 195 if self.data_class == "person" else 195*6
+        action_batch = int(self.testFlag.shape[0]/5)
         self.correct = 0
         self.correct_action = np.zeros(self.num_classes)
         j = 0

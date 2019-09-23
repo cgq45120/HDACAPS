@@ -87,7 +87,7 @@ class RunMain():
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
-        action_batch = 195 if self.data_class == "person" else 195*6
+        action_batch = int(self.testFlag.shape[0]/5)
         self.correct = 0
         self.correct_action = np.zeros(self.num_classes)
         j = 0
@@ -159,13 +159,13 @@ class RunMain():
 
     def load(self):
         saver = tf.train.Saver()
-        saver.restore(self.sess,'saver_bp/muscle.ckpt')
+        saver.restore(self.sess,'saver_bp_best/muscle.ckpt')
 
 if __name__ == "__main__":
     # data_class = "person"
     data_class = "people"
     iteration = 40 if data_class == "person" else 30
-    for i in range(1):
+    for i in range(10):
         print('bp_model the time:'+str(i+1))
         bp_model = RunMain(data_class)
         bp_model.train(iteration) 

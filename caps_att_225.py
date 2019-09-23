@@ -67,7 +67,7 @@ class CapsLayer(object):
         vec_squashed = scalar_factor * vector  
         return(vec_squashed)
 
-class spatial_attention():
+class SpatialAttention():
     def __init__(self,input_shape):
         self.w_tanh = self.weight_variable((1,input_shape[1].value,input_shape[2].value,input_shape[3].value))
         self.b_tanh = self.bias_variable((1,input_shape[1].value,input_shape[2].value,1))
@@ -114,8 +114,8 @@ class Capsnet():
         with tf.variable_scope('Conv2_layer'):
             conv2 = tf.contrib.layers.conv2d(conv1, num_outputs = self.num_outputs_layer_conv2d2,kernel_size = 14, stride = 3,padding='VALID',activation_fn=tf.nn.relu)
         attention_shape = conv2.get_shape()
-        with tf.variable_scope('soft_attention'):
-            spatialAtt = spatial_attention(attention_shape)
+        with tf.variable_scope('Soft_attention'):
+            spatialAtt = SpatialAttention(attention_shape)
             attention1 = spatialAtt(conv2)
         with tf.variable_scope('PrimaryCaps_layer'):
             primaryCaps = CapsLayer(self.batch_size,self.epsilon,self.iter_routing,num_outputs=self.num_outputs_layer_PrimaryCaps, vec_len=self.num_dims_layer_PrimaryCaps, with_routing=False, layer_type='CONV')
@@ -139,15 +139,16 @@ class Capsnet():
         # self.train_op = tf.train.AdamOptimizer(self.learning_rate).minimize(self.total_loss, global_step = self.global_step)
 
 
-class run_main():
-    def __init__(self):
-        sign_handle = import_data.dealsign()
-        trainData,self.trainFlag,testData,self.testFlag = sign_handle.readFile()
+class RunMain():
+    def __init__(self,data_class):
+        self.data_class = data_class
+        sign_handle = import_data.DealSign()
+        trainData,self.trainFlag,testData,self.testFlag = sign_handle.readFile(self.data_class)
         self.trainData = self.two_dimension_graph(trainData)
         self.testData = self.two_dimension_graph(testData)
         self.image_size = 225
         self.num_classes = 5
-        self.batch_size = 16
+        self.batch_size = 16 if self.data_class == "person" else 32
         self.lambda_val = 0.5
         self.m_plus = 0.9
         self.m_minus = 0.1
@@ -202,6 +203,7 @@ class run_main():
         print(correct)
         accuracy = correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
+        return accuracy
 
     def random_mini_batches(self, mini_batch_size=64, seed=0):
         X = self.trainData
@@ -223,14 +225,18 @@ class run_main():
         return mini_batches
 
     def save(self):
-        saver = tf.train.Saver(max_to_keep = 5)
-        saver.save(self.sess,'saver_caps/muscle.ckpt')
+        saver = tf.train.Saver(max_to_keep=5)
+        saver.save(self.sess, 'saver_caps/muscle.ckpt')
 
     def load(self):
         saver = tf.train.Saver()
         saver.restore(self.sess,'saver_caps/muscle.ckpt')
 
 if __name__ == "__main__":
-    ram_better = run_main()
-    ram_better.train(50) 
-    ram_better.predict()
+    data_class = "person"
+    # data_class = "people"
+    iteration = 40 if data_class == "person" else 30
+    caps_attention_255_model = RunMain(data_class)
+    caps_attention_255_model.train(iteration) 
+    accuracy = caps_attention_255_model.predict()
+    tf.reset_default_graph()

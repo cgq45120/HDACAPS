@@ -69,7 +69,7 @@ class CapsLayer(object):
         return(vec_squashed)
 
 
-class spatial_attention():
+class SpatialAttention():
     def __init__(self, input_shape):
         self.w_tanh = self.weight_variable((1, input_shape[1].value, input_shape[2].value, input_shape[3].value))
         self.b_tanh = self.bias_variable((1, input_shape[1].value, input_shape[2].value, 1))
@@ -112,8 +112,8 @@ class Capsnet():
         self.label = tf.placeholder(tf.int64, [self.batch_size, 1])
         label_onehot = tf.one_hot(self.label, depth=num_classes, axis=1, dtype=tf.float32)
         attention_shape = self.image.get_shape()
-        with tf.variable_scope('soft_attention'):
-            self.spatialAtt = spatial_attention(attention_shape)
+        with tf.variable_scope('Soft_attention'):
+            self.spatialAtt = SpatialAttention(attention_shape)
             self.attention1 = self.spatialAtt(self.image)
         with tf.variable_scope('Conv1_layer'):
             self.conv1 = tf.contrib.layers.conv2d(self.attention1, num_outputs=self.num_outputs_layer_conv2d1, kernel_size=5, stride=1, padding='VALID')
@@ -140,14 +140,15 @@ class Capsnet():
         self.train_op = tf.train.AdamOptimizer().minimize(self.total_loss, global_step=self.global_step)
 
 
-class run_main():
-    def __init__(self):
-        sign_handle = import_data.dealsign()
-        trainData, self.trainFlag, testData, self.testFlag = sign_handle.readFile()
+class RunMain():
+    def __init__(self,data_class):
+        self.data_class = data_class
+        sign_handle = import_data.DealSign()
+        trainData, self.trainFlag, testData, self.testFlag = sign_handle.readFile(self.data_class)
         self.image_size = 15
         self.channal = 16
         self.num_classes = 5
-        self.batch_size = 16
+        self.batch_size = 16 if self.data_class == "person" else 32
         self.lambda_val = 0.5
         self.m_plus = 0.9
         self.m_minus = 0.1
@@ -204,8 +205,6 @@ class run_main():
                 print('step {}:loss = {:3.10f}'.format(step, epoch_cost))
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
-            accuracy = self.predict()
-        self.save()
 
     def save_best(self, accuracy):
         correct_num = 0
@@ -238,7 +237,7 @@ class run_main():
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
-        action_batch = 195
+        action_batch = int(self.testFlag.shape[0]/5)
         self.correct = 0
         self.correct_action = np.zeros(self.num_classes)
         j = 0
@@ -255,8 +254,6 @@ class run_main():
                 self.correct_action[j] += np.sum(predict_transform[interval:])
             else:
                 self.correct_action[j] += np.sum(predict_transform)
-        # print(self.correct_action)
-        # print(self.correct)
         accuracy = self.correct/(self.batch_size*num)
         print('test accuracy = {:3.6f}'.format(accuracy))
         return accuracy
@@ -280,21 +277,19 @@ class run_main():
             mini_batches.append(mini_batch)
         return mini_batches
 
-    def save(self):
-        saver = tf.train.Saver(max_to_keep=5)
-        saver.save(self.sess, 'saver_caps/muscle.ckpt')
-
     def load(self):
         saver = tf.train.Saver()
-        saver.restore(self.sess, 'saver_caps/muscle.ckpt')
+        saver.restore(self.sess, 'saver_caps_location_best/muscle.ckpt')
 
 
 if __name__ == "__main__":
-    for i in range(1):
-        print('the time:'+str(i+1))
-        ram_better = run_main()
-        ram_better.train(40)
-        accuracy = ram_better.predict()
-        if accuracy > 0.83:
-            ram_better.save_best(accuracy)
+    data_class = "person"
+    # data_class = "people"
+    iteration = 40 if data_class == "person" else 30
+    for i in range(10):
+        print('caps_se_model the time:'+str(i+1))
+        caps_se_model = RunMain(data_class)
+        caps_se_model.train(iteration) 
+        accuracy = caps_se_model.predict()
+        caps_se_model.save_best(accuracy)
         tf.reset_default_graph()

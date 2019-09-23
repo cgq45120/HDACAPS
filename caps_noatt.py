@@ -110,14 +110,15 @@ class Capsnet():
         # Adam optimization
         self.train_op = tf.train.AdamOptimizer().minimize(self.total_loss, global_step = self.global_step)
 
-class run_main():
-    def __init__(self):
-        sign_handle = import_data.dealsign()
-        trainData,self.trainFlag,testData,self.testFlag = sign_handle.readFile()
+class RunMain():
+    def __init__(self,data_class):
+        self.data_class = data_class
+        sign_handle = import_data.DealSign()
+        trainData,self.trainFlag,testData,self.testFlag = sign_handle.readFile(self.data_class)
         self.image_size = 15
         self.channal = 16
         self.num_classes = 5
-        self.batch_size = 16
+        self.batch_size = 16 if self.data_class == "person" else 32
         self.lambda_val = 0.5
         self.m_plus = 0.9
         self.m_minus = 0.1
@@ -173,12 +174,11 @@ class run_main():
                 print('step {}:loss = {:3.10f}'.format(step,epoch_cost))
             self.record_epoch_loss[i] = epoch_cost
             i = i + 1
-        self.save()
 
     def predict(self):
         m = self.testData.shape[0]
         num = int(m/self.batch_size)
-        action_batch = 195
+        action_batch = int(self.testFlag.shape[0]/5)
         self.correct = 0
         self.correct_action = np.zeros(self.num_classes)
         j = 0
@@ -248,20 +248,18 @@ class run_main():
             mini_batches.append(mini_batch)
         return mini_batches
 
-    def save(self):
-        saver = tf.train.Saver(max_to_keep = 5)
-        saver.save(self.sess,'saver_caps_noatt/muscle.ckpt')
-
     def load(self):
         saver = tf.train.Saver()
         saver.restore(self.sess,'saver_caps_noatt/muscle.ckpt')
         
 if __name__ == "__main__":
-    for i in range(15):
-        print('the time:'+str(i+1))
-        ram_better = run_main()
-        ram_better.train(40) 
-        accuracy = ram_better.predict()
-        if accuracy >0.7:
-            ram_better.save_best(accuracy)
+    data_class = "person"
+    # data_class = "people"
+    iteration = 40 if data_class == "person" else 30
+    for i in range(10):
+        print('caps_no_attention_model the time:'+str(i+1))
+        caps_no_attention_model = RunMain(data_class)
+        caps_no_attention_model.train(iteration) 
+        accuracy = caps_no_attention_model.predict()
+        caps_no_attention_model.save_best(accuracy)
         tf.reset_default_graph()

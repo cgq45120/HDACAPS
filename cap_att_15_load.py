@@ -80,7 +80,7 @@ class CapsLayer(object):
         return(vec_squashed)
 
 
-class spatial_attention():
+class SpatialAttention():
     def __init__(self, input_shape):
         self.w_tanh = self.weight_variable(
             (1, input_shape[1].value, input_shape[2].value, input_shape[3].value))
@@ -136,8 +136,8 @@ class Capsnet():
             conv1 = tf.contrib.layers.conv2d(
                 self.image, num_outputs=self.num_outputs_layer_conv2d1, kernel_size=5, stride=1, padding='VALID')
         attention_shape = conv1.get_shape()
-        with tf.variable_scope('soft_attention'):
-            self.spatialAtt = spatial_attention(attention_shape)
+        with tf.variable_scope('Soft_attention'):
+            self.spatialAtt = SpatialAttention(attention_shape)
             attention1 = self.spatialAtt(conv1)
         with tf.variable_scope('PrimaryCaps_layer'):
             primaryCaps = CapsLayer(self.batch_size, self.epsilon, self.iter_routing, num_outputs=self.num_outputs_layer_PrimaryCaps,
@@ -167,14 +167,15 @@ class Capsnet():
             self.total_loss, global_step=self.global_step)
 
 
-class run_main():
-    def __init__(self):
-        sign_handle = import_data.dealsign()
-        trainData, self.trainFlag, testData, self.testFlag = sign_handle.readFile()
+class RunMain():
+    def __init__(self,data_class):
+        self.data_class = data_class
+        sign_handle = import_data.DealSign()
+        trainData, self.trainFlag, testData, self.testFlag = sign_handle.readFile(self.data_class)
         self.image_size = 15
         self.channal = 16
         self.num_classes = 5
-        self.batch_size = 16
+        self.batch_size = 16 if self.data_class == "person" else 32
         self.lambda_val = 0.5
         self.m_plus = 0.9
         self.m_minus = 0.1
@@ -243,6 +244,8 @@ class run_main():
 
 
 if __name__ == "__main__":
-    ram_better = run_main()
+    data_class = "person"
+    # data_class = "people"
+    ram_better = RunMain(data_class)
     ram_better.load()
     ram_better.predict()
